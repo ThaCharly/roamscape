@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.charly.wallpapermap.app-mergeReleaseResources-44:/values-w320dp-land-v13/values-w320dp-land-v13.xml",
+            "map": [
+                {
+                    "source": "/home/thacharly/.gradle/caches/9.0-milestone-1/transforms/91b7926aab94caa75caf6f15370ef7c3/transformed/material-1.7.0/res/values-w320dp-land-v13/values-w320dp-land-v13.xml",
+                    "from": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,110",
+                        "endColumns": "54,61",
+                        "endOffsets": "105,167"
+                    }
+                }
+            ]
+        }
+    ]
+}

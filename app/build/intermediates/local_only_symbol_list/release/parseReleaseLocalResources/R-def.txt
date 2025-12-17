@@ -1,0 +1,36 @@
+R_DEF: Internal format may change without notice
+local
+array map_style_values
+array map_styles
+color purple_500
+color purple_700
+color teal_200
+color white
+drawable ic_info
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+drawable ic_location_map
+drawable ic_location_on
+drawable ic_map_style
+drawable ic_settings
+drawable ic_stop
+drawable ic_wallpaper
+drawable ic_zoom
+id btnSetWallpaper
+id btnSettings
+id map_preview_container
+id slider
+id slider_value
+id tvInfo
+id tvTitle
+layout activity_main
+layout slider_layout
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_icon_desc
+string app_name
+string permission_rationale
+style Base.Theme.WallpaperMap
+style Theme.WallpaperMap
+xml preferences
+xml wallpaper

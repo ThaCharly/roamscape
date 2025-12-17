@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">RoamScape</string>
+    <string name="permission_rationale">La app necesita permiso de ubicación para mostrar tu posición en el mapa.</string>
+    <string name="app_icon_desc">Ícono de la aplicación: mapa con ubicación</string>
+</resources>

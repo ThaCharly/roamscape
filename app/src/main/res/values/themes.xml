@@ -1,0 +1,17 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Tema base de la aplicación -->
+    <style name="Base.Theme.WallpaperMap" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Puedes personalizar tu tema aquí si lo deseas -->
+        <!-- <item name="colorPrimary">@color/purple_500</item> -->
+
+
+        <!--
+        Esta es la línea MÁGICA.
+        Le dice a la pantalla de preferencias que use un tema especial (overlay)
+        que es compatible con los componentes de Material Design como el Slider.
+        -->
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+    </style>
+
+    <style name="Theme.WallpaperMap" parent="Base.Theme.WallpaperMap" />
+</resources>

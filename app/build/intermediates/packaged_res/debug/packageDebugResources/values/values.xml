@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="map_style_values">
+        <item>MAPNIK</item>
+        <item>CARTO_DARK</item>
+        <item>CARTO_VOYAGER</item>
+        <item>CARTO_LIGHT</item>
+    </string-array>
+    <string-array name="map_styles">
+        <item>OSM Default (Mapnik)</item>
+        <item>CartoDB DarkMatter</item>
+        <item>CartoDB Voyager</item>
+        <item>Carto Light</item>
+    </string-array>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="white">#FFFFFF</color>
+    <string name="app_icon_desc">Ícono de la aplicación: mapa con ubicación</string>
+    <string name="app_name">RoamScape</string>
+    <string name="permission_rationale">La app necesita permiso de ubicación para mostrar tu posición en el mapa.</string>
+    <style name="Base.Theme.WallpaperMap" parent="Theme.Material3.DayNight.NoActionBar">
+        
+        
+
+
+        
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+    </style>
+    <style name="Theme.WallpaperMap" parent="Base.Theme.WallpaperMap"/>
+</resources>

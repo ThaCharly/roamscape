@@ -1,0 +1,67 @@
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="Apariencia del mapa">
+
+
+
+
+        <ListPreference
+            android:key="map_style"
+            android:title="Estilo del mapa"
+            android:summary="Clásico, oscuro, claro, más claro."
+            android:defaultValue="MAPNIK"
+            android:entries="@array/map_styles"
+            android:entryValues="@array/map_style_values"
+            app:icon="@drawable/ic_map_style" />
+
+        <com.charly.wallpapermap.SliderPreference
+            android:key="map_zoom"
+            android:title="Nivel de zoom"
+            android:summary="Entre 4 (mundo) y 21 (calle)"
+            android:defaultValue="12"
+            android:min="4"
+            android:max="21"
+            android:layout="@layout/slider_layout"
+            app:icon="@drawable/ic_zoom" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Ubicación">
+
+        <SwitchPreference
+            android:key="show_blue_dot"
+            android:title="Mostrar mi ubicación"
+            android:summary="Punto azul en tiempo real"
+            android:defaultValue="true"
+            app:icon="@drawable/ic_location_on" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Control">
+
+        <Preference
+            android:key="stop_wallpaper"
+            android:title="Detener Live Wallpaper"
+            android:summary="Desactiva el fondo dinámico"
+            app:icon="@drawable/ic_stop"
+            app:iconSpaceReserved="true" />
+
+    </PreferenceCategory>
+
+        <Preference
+    android:key="clear_tile_cache"
+    android:title="Borrar caché de tiles"
+    android:summary="El mapa volverá a descargar todos los mosaicos"
+    app:icon="@drawable/ic_trash"
+    app:iconSpaceReserved="true" />
+
+    <SwitchPreference
+    android:key="use_accelerometer"
+    android:title="Usar sensor de movimiento"
+    android:summary="Pausa el GPS cuando el teléfono no se mueve, lo que ahorra batería"
+    android:defaultValue="true"
+    app:icon="@drawable/ic_motion_sensor" />
+
+
+</PreferenceScreen>

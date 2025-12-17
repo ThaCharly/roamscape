@@ -1,0 +1,209 @@
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:13: Warning: Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the android.os.Build.VERSION_CODES javadoc for details. [OldTargetApi]
+        targetSdk = 33
+        ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "OldTargetApi":
+   When your application or sdk runs on a version of Android that is more
+   recent than your targetSdkVersion specifies that it has been tested with,
+   various compatibility modes kick in. This ensures that your application
+   continues to work, but it may look out of place. For example, if the
+   targetSdkVersion is less than 14, your app may get an option button in the
+   UI.
+
+   To fix this issue, set the targetSdkVersion to the highest available value.
+   Then test your app to make sure everything works correctly. You may want to
+   consult the compatibility notes to see what changes apply to each version
+   you are adding support for:
+   https://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+   as well as follow this guide:
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.
+   html
+
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.html
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:8: Warning: A newer version of compileSdkVersion than 33 is available: 36 [GradleDependency]
+    compileSdk = 33
+    ~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:41: Warning: A newer version of androidx.core:core-ktx than 1.9.0 is available: 1.17.0 [GradleDependency]
+    implementation("androidx.core:core-ktx:1.9.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:42: Warning: A newer version of androidx.appcompat:appcompat than 1.6.1 is available: 1.7.1 [GradleDependency]
+    implementation("androidx.appcompat:appcompat:1.6.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:43: Warning: A newer version of androidx.activity:activity-ktx than 1.6.1 is available: 1.11.0 [GradleDependency]
+    implementation("androidx.activity:activity-ktx:1.6.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:46: Warning: A newer version of androidx.preference:preference-ktx than 1.2.0 is available: 1.2.1 [GradleDependency]
+    implementation("androidx.preference:preference-ktx:1.2.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:47: Warning: A newer version of com.google.android.material:material than 1.7.0 is available: 1.13.0 [GradleDependency]
+    implementation("com.google.android.material:material:1.7.0") // Material básico
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/build.gradle.kts:50: Warning: A newer version of org.osmdroid:osmdroid-android than 6.1.16 is available: 6.1.20 [NewerVersionAvailable]
+    implementation("org.osmdroid:osmdroid-android:6.1.16")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "NewerVersionAvailable":
+   This detector checks with a central repository to see if there are newer
+   versions available for the dependencies used by this project. This is
+   similar to the GradleDependency check, which checks for newer versions
+   available in the Android SDK tools and libraries, but this works with any
+   MavenCentral dependency, and connects to the library every time, which
+   makes it more flexible but also much slower.
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/AndroidManifest.xml:12: Warning: The attribute android:allowBackup is deprecated from Android 12 and the default allows backup [DataExtractionRules]
+        android:allowBackup="true"
+                             ~~~~
+
+   Explanation for issues of type "DataExtractionRules":
+   Before Android 12, the attributes android:allowBackup and
+   android:fullBackupContent were used to configure all forms of backup,
+   including cloud backups, device-to-device transfers and adb backup.
+
+   In Android 12 and higher, these attributes have been deprecated and will
+   only apply to cloud backups. You should instead use the attribute
+   android:dataExtractionRules, specifying an @xml resource that configures
+   which files to back up, for cloud backups and for device-to-device
+   transfers, separately. If your minSdkVersion supports older versions,
+   you'll still want to specify an android:fullBackupContent resource if the
+   default behavior is not right for your app.
+
+   https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   https://goo.gle/DataExtractionRules
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/res/values/colors.xml:5: Warning: The resource R.color.white appears to be unused [UnusedResources]
+    <color name="white">#FFFFFF</color>
+           ~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/res/values/strings.xml:3: Warning: The resource R.string.permission_rationale appears to be unused [UnusedResources]
+    <string name="permission_rationale">La app necesita permiso de ubicación para mostrar tu posición en el mapa.</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests =true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests =true.
+   ,
+
+   Available options:
+
+   **skip-libraries** (default is true):
+   Whether the unused resource check should skip reporting unused resources in libraries.
+
+   Many libraries will declare resources that are part of the library surface; other modules depending on the library will also reference the resources. To avoid reporting all these resources as unused (in the context of a library), the unused resource check normally skips reporting unused resources in libraries. Instead, run the unused resource check on the consuming app module (along with `checkDependencies=true`).
+
+   However, there are cases where you want to check that all the resources declared in a library are used; in that case, you can disable the skip option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UnusedResources">
+           <option name="skip-libraries" value="true" />
+       </issue>
+   </lint>
+   ```
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/java/com/charly/wallpapermap/ui/BlueDotOverlay.kt:32: Warning: Use the KTX extension function String.toColorInt instead? [UseKtx]
+            color = Color.parseColor("#FF3366FF")
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/java/com/charly/wallpapermap/ui/BlueDotOverlay.kt:32: Warning: Use the KTX extension function String.toColorInt instead? [UseKtx]
+            color = Color.parseColor("#FF3366FF")
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling
+
+   ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/res/layout/activity_main.xml:21: Warning: Hardcoded string "Establecer como Live Wallpaper", should use @string resource [HardcodedText]
+        android:text="Establecer como Live Wallpaper"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/res/layout/activity_main.xml:27: Warning: Hardcoded string "Ajustes", should use @string resource [HardcodedText]
+        android:text="Ajustes"
+        ~~~~~~~~~~~~~~~~~~~~~~
+/home/thacharly/AndroidStudioProjects/WandererWall/app/src/main/res/layout/activity_main.xml:34: Warning: Hardcoded string "Preview del wallpaper se muestra al activarlo.", should use @string resource [HardcodedText]
+        android:text="Preview del wallpaper se muestra al activarlo."
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "HardcodedText":
+   Hardcoding text attributes directly in layout files is bad for several
+   reasons:
+
+   * When creating configuration variations (for example for landscape or
+   portrait) you have to repeat the actual text (and keep it up to date when
+   making changes)
+
+   * The application cannot be translated to other languages by just adding
+   new translations for existing string resources.
+
+   There are quickfixes to automatically extract this hardcoded string into a
+   resource lookup.
+
+0 errors, 16 warnings

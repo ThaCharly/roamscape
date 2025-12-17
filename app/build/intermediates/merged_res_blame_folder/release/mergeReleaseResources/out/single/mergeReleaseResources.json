@@ -1,0 +1,66 @@
+[
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_location_on.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_location_on.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/mipmap_ic_launcher.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/mipmap/ic_launcher.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_stop.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_stop.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_settings.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_settings.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/xml_preferences.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/xml/preferences.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/layout_activity_main.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/xml_wallpaper.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/xml/wallpaper.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_zoom.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_zoom.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_info.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_info.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/mipmap_ic_launcher_round.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/mipmap/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_map_style.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_map_style.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/layout_slider_layout.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/layout/slider_layout.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_wallpaper.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_wallpaper.xml"
+    },
+    {
+        "merged": "com.charly.wallpapermap.app-release-46:/drawable_ic_location_map.xml.flat",
+        "source": "com.charly.wallpapermap.app-main-47:/drawable/ic_location_map.xml"
+    }
+]

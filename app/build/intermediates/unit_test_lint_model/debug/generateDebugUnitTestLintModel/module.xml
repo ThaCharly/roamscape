@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="/home/thacharly/AndroidStudioProjects/WandererWall/app"
+    name=":app"
+    type="APP"
+    maven="MapWallpaperApp:app:unspecified"
+    agpVersion="8.13.0"
+    buildFolder="build"
+    bootClassPath="/home/thacharly/Android/Sdk/platforms/android-33/android.jar:/home/thacharly/Android/Sdk/build-tools/35.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="11"
+    compileTarget="android-33"
+    neverShrinking="true">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="debug"/>
+</lint-module>

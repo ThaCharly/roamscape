@@ -1,0 +1,14 @@
+[
+    {
+        "merged": "com.charly.wallpapermap.app-mergeDebugResources-45:/layout/activity_main.xml",
+        "source": "com.charly.wallpapermap.app-main-48:/layout/activity_main.xml"
+    },
+    {
+        "merged": "/home/thacharly/.gradle/daemon/9.0-milestone-1/com.charly.wallpapermap.app-mergeDebugResources-45:/layout/activity_main.xml",
+        "source": "/home/thacharly/.gradle/daemon/9.0-milestone-1/com.charly.wallpapermap.app-main-48:/layout/activity_main.xml"
+    },
+    {
+        "merged": "/home/thacharly/.gradle/daemon/9.0-milestone-1/com.charly.wallpapermap.app-mergeDebugResources-45:/layout/slider_layout.xml",
+        "source": "/home/thacharly/.gradle/daemon/9.0-milestone-1/com.charly.wallpapermap.app-main-48:/layout/slider_layout.xml"
+    }
+]
