@@ -14,15 +14,25 @@ class MapRenderer(
 ) {
     val mapView: MapView
     private var brightnessOverlay: BrightnessOverlay? = null
+    private var lastGeoPoint: GeoPoint? = null
 
     init {
         mapView = MapView(context)
+
+        // 🛠️ CORREGIDO: Eliminada la línea 'isTilesScaledToDpi = true'
+        // Ahora osmdroid pedirá los tiles exactos (1:1) para el nivel de zoom,
+        // manteniendo la nitidez y legibilidad original.
+        mapView.setMultiTouchControls(false)
 
         // 🔹 Estilo inicial
         val styleKey = SettingsManager.getMapStyle(context)
         applyStyle(styleKey)
 
-        // 🔹 Overlays iniciales
+        // 🔹 Zoom inicial
+        val zoom = SettingsManager.getMapZoom(context)
+        setZoom(zoom.toFloat())
+
+        // 🔹 Overlays
         if (SettingsManager.showBlueDot(context)) {
             mapView.overlays.add(BlueDotOverlay(getLocation))
         }
@@ -30,75 +40,50 @@ class MapRenderer(
         val scaleBarOverlay = ScaleBarOverlay(mapView)
         scaleBarOverlay.setAlignRight(true)
         mapView.overlays.add(scaleBarOverlay)
-
-        // 🔹 Filtro de brillo inicial
-        maybeAddBrightnessOverlay(styleKey)
     }
 
     // ------------------------------------------------------------
-    // 🔹 Cambio de estilo
+    // 🔹 API de Control
     // ------------------------------------------------------------
-    private fun setTileSourceWithCache(tileSource: ITileSource) {
-        mapView.setTileSource(tileSource)
-    }
 
-    fun applyStyle(styleKey: String?) {
-        val tileSource = TileSources.fromKey(styleKey)
-        setTileSourceWithCache(tileSource)
-        maybeAddBrightnessOverlay(styleKey)
-    }
-
-    // ------------------------------------------------------------
-    // 🔹 Filtro de brillo dinámico
-    // ------------------------------------------------------------
-    private fun maybeAddBrightnessOverlay(styleKey: String?) {
-        // Quita el overlay anterior
-        brightnessOverlay?.let { mapView.overlays.remove(it) }
-
-        when (styleKey) {
-            TileSources.KEY_CARTO_DARK -> {
-                // 🔸 Aclarar el Dark Matter (porque es MUY oscuro)
-                brightnessOverlay = BrightnessOverlay(
-                    alphaa = 14,
-                    mode = BrightnessOverlay.Mode.LIGHTEN
-                )
-                mapView.overlays.add(brightnessOverlay)
-            }
-            TileSources.KEY_MAPNIK, TileSources.KEY_CARTO_LIGHT -> {
-                // 🔸 Oscurecer los claros para la noche
-                brightnessOverlay = BrightnessOverlay(
-                    alphaa = 77,
-                    mode = BrightnessOverlay.Mode.DARKEN
-                )
-                mapView.overlays.add(brightnessOverlay)
-            }
-            else -> brightnessOverlay = null
+    fun setZoom(zoomLevel: Float) {
+        // Usamos setZoom del controller que dispara la carga de nuevos tiles
+        if (mapView.zoomLevelDouble.toFloat() != zoomLevel) {
+            mapView.controller.setZoom(zoomLevel.toDouble())
         }
     }
 
-    // ------------------------------------------------------------
-    // 🔹 Métodos dinámicos
-    // ------------------------------------------------------------
-    private var lastGeoPoint: GeoPoint? = null
+    fun applyStyle(styleKey: String?) {
+        val newTileSource = TileSources.fromKey(styleKey)
+        if (mapView.tileProvider.tileSource.name() != newTileSource.name()) {
+            mapView.setTileSource(newTileSource)
+            updateBrightnessOverlay(styleKey)
+        }
+    }
 
     fun centerOn(lat: Double, lon: Double) {
         val newPoint = GeoPoint(lat, lon)
-        if (lastGeoPoint == null || newPoint.distanceToAsDouble(lastGeoPoint) > 2.0) {
+        // Evitamos saltos a coordenadas inválidas (0,0)
+        if (lat == 0.0 && lon == 0.0) return
+
+        if (lastGeoPoint == null || newPoint.distanceToAsDouble(lastGeoPoint) > 1.0) {
             mapView.controller.setCenter(newPoint)
             lastGeoPoint = newPoint
         }
     }
 
-    fun ensureZoomUpdated() {
-        val currentZoom = SettingsManager.getMapZoom(context).toDouble()
-        mapView.controller.setZoom(currentZoom)
-    }
+    // ------------------------------------------------------------
+    // 🔹 Lógica Privada
+    // ------------------------------------------------------------
+    private fun updateBrightnessOverlay(styleKey: String?) {
+        brightnessOverlay?.let { mapView.overlays.remove(it) }
 
-    fun ensureStyleUpdated() {
-        val currentStyle = SettingsManager.getMapStyle(context)
-        val newTileSource = TileSources.fromKey(currentStyle)
-        if (mapView.tileProvider.tileSource?.name() != newTileSource.name()) {
-            applyStyle(currentStyle)
+        brightnessOverlay = when (styleKey) {
+            TileSources.KEY_CARTO_DARK -> BrightnessOverlay(14, BrightnessOverlay.Mode.LIGHTEN)
+            TileSources.KEY_MAPNIK, TileSources.KEY_CARTO_LIGHT -> BrightnessOverlay(77, BrightnessOverlay.Mode.DARKEN)
+            else -> null
         }
+
+        brightnessOverlay?.let { mapView.overlays.add(it) }
     }
 }

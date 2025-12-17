@@ -4,9 +4,10 @@ import android.content.Context
 import androidx.preference.PreferenceManager
 
 object SettingsManager {
-    private const val KEY_MAP_STYLE = "map_style"
-    private const val KEY_SHOW_BLUE = "show_blue_dot"
-    private const val KEY_ZOOM = "map_zoom"
+    // 🔓 Ahora son públicas para que el Servicio pueda escuchar cambios específicos
+    const val KEY_MAP_STYLE = "map_style"
+    const val KEY_SHOW_BLUE = "show_blue_dot"
+    const val KEY_ZOOM = "map_zoom"
 
     private const val MIN_ZOOM = 4
     private const val MAX_ZOOM = 21
@@ -34,7 +35,7 @@ object SettingsManager {
         var changed = false
 
         if (!prefs.contains(KEY_MAP_STYLE)) {
-            editor.putString(KEY_MAP_STYLE, "MAPNIK") // 👈 DEFAULT CLARO Y CORRECTO
+            editor.putString(KEY_MAP_STYLE, "MAPNIK")
             changed = true
         }
         if (!prefs.contains(KEY_SHOW_BLUE)) {

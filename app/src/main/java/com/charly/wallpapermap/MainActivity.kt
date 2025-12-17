@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.charly.wallpapermap.databinding.ActivityMainBinding
+import com.charly.wallpapermap.settings.SettingsManager
 import com.charly.wallpapermap.wallpaper.MapWallpaperService
 
 class MainActivity : AppCompatActivity() {
@@ -23,17 +24,20 @@ class MainActivity : AppCompatActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) promptBatteryOptimizationDialog() // Encadenado
+        if (granted) promptBatteryOptimizationDialog()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Inicializamos componentes globales
         com.charly.wallpapermap.location.LocationManager.init(applicationContext)
+        SettingsManager.ensureDefaults(applicationContext)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // === Primera ejecución: permisos y batería ===
+        // === Primera ejecución: permisos ===
         val prefs = getSharedPreferences("wallpaper_prefs", MODE_PRIVATE)
         val isFirstRun = prefs.getBoolean("first_run", true)
         if (isFirstRun) {
@@ -47,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.mapPreviewContainer.addView(previewRenderer!!.mapView)
 
-        // Centrar mapa cuando layout esté listo
+        // Centrar mapa inicial cuando layout esté listo
         previewRenderer!!.mapView.viewTreeObserver.addOnGlobalLayoutListener(
             object : ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
@@ -57,13 +61,12 @@ class MainActivity : AppCompatActivity() {
                     if (lastKnown != null) {
                         previewRenderer!!.centerOn(lastKnown.first, lastKnown.second)
                     } else {
-                        previewRenderer!!.centerOn(-34.8553013, -56.1936854) // fallback
+                        previewRenderer!!.centerOn(-34.8553013, -56.1936854) // Fallback (Montevideo?)
                     }
 
                     // Escucha actualizaciones futuras
                     com.charly.wallpapermap.location.LocationManager.start { latlon ->
-                        previewRenderer!!.ensureZoomUpdated()
-                        previewRenderer!!.ensureStyleUpdated()
+                        // Ya no necesitamos ensureZoom/Style aquí, el renderer mantiene su estado
                         previewRenderer!!.centerOn(latlon.first, latlon.second)
                     }
                 }
@@ -119,8 +122,8 @@ class MainActivity : AppCompatActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Optimización de batería")
                 .setMessage(
-                    "Para que el wallpaper funcione sin restricciones, la app necesita no estar restringida por Android.\n" +
-                            "Busque RoamScape en el siguiente menú y seleccione 'No restringida' o similar."
+                    "Para que el wallpaper funcione fluido, es mejor quitar la restricción de batería.\n" +
+                            "Busque RoamScape y seleccione 'No restringida'."
                 )
                 .setPositiveButton("Dale sabelo") { _, _ ->
                     val intent = Intent().apply {
@@ -136,26 +139,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-
         (binding.mapPreviewContainer.getChildAt(0) as? org.osmdroid.views.MapView)?.onResume()
-        previewRenderer?.ensureZoomUpdated()
-        previewRenderer?.ensureStyleUpdated()
 
-        // 🛰️ Arranca el GPS en modo preview
+        // ⚡ Actualización manual al volver de SettingsActivity
+        // Como SettingsActivity corre en otro proceso/contexto UI, al volver forzamos la lectura
+        previewRenderer?.apply {
+            setZoom(SettingsManager.getMapZoom(this@MainActivity).toFloat())
+            applyStyle(SettingsManager.getMapStyle(this@MainActivity))
+        }
+
         com.charly.wallpapermap.location.LocationManager.start { latlon ->
-            previewRenderer?.ensureZoomUpdated()
-            previewRenderer?.ensureStyleUpdated()
             previewRenderer?.centerOn(latlon.first, latlon.second)
         }
     }
 
     override fun onPause() {
         super.onPause()
-
         (binding.mapPreviewContainer.getChildAt(0) as? org.osmdroid.views.MapView)?.onPause()
-
-        // 💤 Detiene el GPS cuando salís del preview
         com.charly.wallpapermap.location.LocationManager.stop()
     }
-
 }
