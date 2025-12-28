@@ -9,16 +9,16 @@ import com.google.android.gms.location.*
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import android.Manifest
-import java.util.LinkedList
 import kotlin.math.abs
 
 object LocationManager {
 
     private const val TAG = "LocationManager"
 
-    // CONFIGURACIÓN DEL FILTRO
-    private const val NOISE_SPEED_THRESHOLD = 0.7f // m/s (aprox 1.8 km/h). Menos que esto es ruido.
-    private const val SIGNIFICANT_DISTANCE = 3.0f  // metros. Si te moviste menos de 2m, ni me gasto.
+    // --- CONFIGURACIÓN DEL FILTRO ---
+    private const val NOISE_SPEED_THRESHOLD = 0.5f // m/s
+    private const val SIGNIFICANT_DISTANCE = 3.0f  // metros
+    private const val MAX_IGNORED_FIXES = 20       // "Heartbeat" forzado
 
     private var context: Context? = null
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -26,19 +26,22 @@ object LocationManager {
     private var listener: ((Pair<Double, Double>) -> Unit)? = null
     private var isStarted = false
 
-    // Guardamos la última ubicación VALIDADA para comparar
+    // Estado interno
     private var lastValidLocation: Location? = null
+    private var ignoredFixesCount = 0
 
     fun init(ctx: Context) {
         context = ctx.applicationContext
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(ctx)
     }
 
-    // Pedimos updates a 1 segundo siempre.
-    // El ahorro de batería lo hacemos descartando datos, no apagando la radio.
-    private fun activeRequest(): LocationRequest =
-        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(500L)
+    // Request ÚNICA y CONSTANTE (1s)
+    // Sin modos raros. Le pedimos al GPS ritmo constante.
+    private fun createLocationRequest(): LocationRequest =
+        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 500L)
+            .setMinUpdateIntervalMillis(0L) // Aceptamos data cada medio segundo si pinta
+            .setMaxUpdateDelayMillis(0L)       // Entregalo YA
+            .setWaitForAccurateLocation(false)
             .build()
 
     fun setUseAccelerometer(enabled: Boolean) { }
@@ -55,43 +58,64 @@ object LocationManager {
 
         isStarted = true
         listener = onUpdate
-        LocationPredictor.reset()
         lastValidLocation = null
+        ignoredFixesCount = 0
+
+        // 1. CACHÉ INMEDIATO (Para tapar el arranque en frío)
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+            if (location != null) {
+                Log.d(TAG, "💾 CACHÉ RECUPERADO: ${location.latitude}, ${location.longitude}")
+                processValidLocation(location, "💾 CACHE")
+            } else {
+                Log.d(TAG, "🤷‍♂️ Caché vacío. Esperando al GPS...")
+            }
+        }
+
+        // 2. INICIO DE UPDATES (Ritmo constante)
+        Log.d(TAG, "🚀 INICIANDO GPS: 1s constante. Filtrado activo.")
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val rawLocation = result.lastLocation ?: return
-
-                // --- 🗑️ EL FILTRO DE BASURA 🗑️ ---
-
-                // 1. Si la velocidad es insignificante (ruido estático)
-                // Y TAMBIÉN la distancia recorrida desde la última vez es ridícula...
-                if (rawLocation.speed < NOISE_SPEED_THRESHOLD) {
-                    val dist = lastValidLocation?.distanceTo(rawLocation) ?: 100f
-                    if (dist < SIGNIFICANT_DISTANCE) {
-                        // Es ruido. Lo tiramos.
-                        // No actualizamos lastValidLocation.
-                        // No llamamos al listener.
-                        // La UI sigue durmiendo.
-                        Log.v(TAG, "🗑️ Ruido descartado (Vel: ${rawLocation.speed}, Dist: $dist)")
-                        return
-                    }
-                }
-
-                // --- SI PASA EL FILTRO ---
-                lastValidLocation = rawLocation
-
-                // Pasamos al predictor (que tiene ALPHA 0.7 para reaccionar rápido)
-                val smoothed = LocationPredictor.update(rawLocation.latitude, rawLocation.longitude)
-
-                // Despertamos a la UI
-                listener?.invoke(smoothed)
-                Log.d(TAG, "📍 FIX VÁLIDO: ${smoothed.first}, ${smoothed.second} (Vel: ${rawLocation.speed})")
+                // Siempre aplicamos el filtro, desde el primer segundo.
+                filterAndProcess(rawLocation)
             }
         }
 
-        fusedLocationClient.requestLocationUpdates(activeRequest(), locationCallback!!, Looper.getMainLooper())
-        Log.d(TAG, "🚀 LocationManager: Filtrando ruido (< ${NOISE_SPEED_THRESHOLD} m/s)")
+        fusedLocationClient.requestLocationUpdates(createLocationRequest(), locationCallback!!, Looper.getMainLooper())
+    }
+
+    private fun filterAndProcess(rawLocation: Location) {
+        val isNoiseSpeed = rawLocation.speed < NOISE_SPEED_THRESHOLD
+        val dist = lastValidLocation?.distanceTo(rawLocation) ?: 100f
+        val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
+
+        // Si es ruido (lento Y cerca)
+        if (isNoiseSpeed && !isSignificantDistance) {
+            ignoredFixesCount++
+
+            // Check de paciencia (Heartbeat)
+            if (ignoredFixesCount > MAX_IGNORED_FIXES) {
+                Log.w(TAG, "⚠️ FORCED UPDATE (${ignoredFixesCount})")
+                processValidLocation(rawLocation, "⏰ FORZADO")
+            } else {
+                Log.v(TAG, "🗑️ Ruido descartado ($ignoredFixesCount/$MAX_IGNORED_FIXES) - Vel: ${rawLocation.speed}, Dist: $dist")
+            }
+            return
+        }
+
+        // Si pasó el filtro
+        processValidLocation(rawLocation, "✅ VALID")
+    }
+
+    private fun processValidLocation(location: Location, source: String) {
+        ignoredFixesCount = 0
+        lastValidLocation = location
+
+        val smoothed = LocationPredictor.update(location.latitude, location.longitude)
+
+        listener?.invoke(smoothed)
+        Log.d(TAG, "📍 $source: ${smoothed.first}, ${smoothed.second} (Vel: ${location.speed})")
     }
 
     fun stop() {
@@ -100,6 +124,7 @@ object LocationManager {
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
         listener = null
+        Log.d(TAG, "🛑 LocationManager detenido")
     }
 
     fun lastKnownLocation(): Pair<Double, Double>? = LocationPredictor.getLastKnown()
