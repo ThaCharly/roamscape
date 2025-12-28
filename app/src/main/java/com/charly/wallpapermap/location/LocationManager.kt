@@ -23,7 +23,6 @@ object LocationManager {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
 
-    // ⚠️ CAMBIO CLAVE: Devolvemos Location, no Pair
     private var listener: ((Location) -> Unit)? = null
 
     private var isStarted = false
@@ -35,11 +34,11 @@ object LocationManager {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(ctx)
     }
 
-    // Samsung Killer Config: 1s base, pero entrega inmediata si hay datos
+    // Configuración "Samsung Killer": Latencia CERO.
     private fun createLocationRequest(): LocationRequest =
         LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(0L)   // Aceptamos todo
-            .setMaxUpdateDelayMillis(0L)      // Latencia CERO
+            .setMinUpdateIntervalMillis(0L)
+            .setMaxUpdateDelayMillis(0L)
             .setWaitForAccurateLocation(false)
             .build()
 
@@ -63,12 +62,11 @@ object LocationManager {
         // 1. Caché Inmediato
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             if (location != null) {
-                Log.d(TAG, "💾 CACHÉ RECUPERADO")
+                // Para el caché no calculamos aceleración porque no tenemos previo
                 processValidLocation(location, "💾 CACHE")
             }
         }
 
-        // 2. Iniciar GPS
         Log.d(TAG, "🚀 INICIANDO GPS: Modo Predictivo (Latencia 0)")
 
         locationCallback = object : LocationCallback() {
@@ -82,17 +80,19 @@ object LocationManager {
     }
 
     private fun filterAndProcess(rawLocation: Location) {
+        // Cálculos para el Log de descarte
+        val dist = lastValidLocation?.distanceTo(rawLocation) ?: 0f
+
         val isNoiseSpeed = rawLocation.speed < NOISE_SPEED_THRESHOLD
-        val dist = lastValidLocation?.distanceTo(rawLocation) ?: 100f
         val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
 
         if (isNoiseSpeed && !isSignificantDistance) {
             ignoredFixesCount++
             if (ignoredFixesCount > MAX_IGNORED_FIXES) {
-                Log.w(TAG, "⚠️ FORCED UPDATE (${ignoredFixesCount})")
+                Log.w(TAG, "⚠️ FORCED UPDATE ($ignoredFixesCount) | Dist: ${"%.2f".format(dist)}m")
                 processValidLocation(rawLocation, "⏰ FORZADO")
             } else {
-                Log.v(TAG, "🗑️ Ruido descartado ($ignoredFixesCount)")
+                Log.v(TAG, "🗑️ Ruido ($ignoredFixesCount) | Vel: ${"%.2f".format(rawLocation.speed)}m/s | Dist: ${"%.2f".format(dist)}m")
             }
             return
         }
@@ -100,11 +100,37 @@ object LocationManager {
     }
 
     private fun processValidLocation(location: Location, source: String) {
+        // --- CÁLCULO DE FÍSICA PARA LOGS ---
+        val prev = lastValidLocation
+        var dist = 0f
+        var accel = 0.0
+
+        if (prev != null) {
+            dist = prev.distanceTo(location)
+
+            // Delta Tiempo en segundos
+            val timeDelta = (location.elapsedRealtimeNanos - prev.elapsedRealtimeNanos) / 1_000_000_000.0
+
+            // Aceleración = (VelFinal - VelInicial) / Tiempo
+            if (timeDelta > 0) {
+                accel = (location.speed - prev.speed) / timeDelta
+            }
+        }
+
+        // Actualizamos estado
         ignoredFixesCount = 0
         lastValidLocation = location
-        // Pasamos el objeto completo
+
+        // Notificamos
         listener?.invoke(location)
-        Log.d(TAG, "📍 $source: Vel=${location.speed}m/s")
+
+        // LOG CIENTÍFICO 🧪
+        Log.d(TAG, "📍 $source " +
+                "| 🌍 ${location.latitude}, ${location.longitude} " +
+                "| 📏 Dist: ${"%.2f".format(dist)}m " +
+                "| 🧭 Bear: ${location.bearing}° " +
+                "| 💨 Vel: ${"%.2f".format(location.speed)}m/s " +
+                "| 🚀 Acc: ${"%.2f".format(accel)}m/s²")
     }
 
     fun stop() {
@@ -116,7 +142,6 @@ object LocationManager {
         Log.d(TAG, "🛑 LocationManager detenido")
     }
 
-    // Devuelve Location para que el caller saque lat/lon/speed
     fun lastKnownLocation(): Location? {
         return lastValidLocation
     }
