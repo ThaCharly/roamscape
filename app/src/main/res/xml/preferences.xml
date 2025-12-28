@@ -29,12 +29,18 @@
 
     <PreferenceCategory android:title="Ubicación">
 
-        <SwitchPreference
-            android:key="show_blue_dot"
-            android:title="Mostrar mi ubicación"
-            android:summary="Punto azul en tiempo real"
-            android:defaultValue="true"
-            app:icon="@drawable/ic_location_on" />
+<CheckBoxPreference
+            app:defaultValue="true"
+            app:key="show_blue_dot"
+            app:title="Mostrar ubicación actual"
+            app:summary="Dibuja un punto azul en tu posición" />
+
+        <CheckBoxPreference
+            app:defaultValue="true"
+            app:key="show_accuracy_halo"
+            app:title="Mostrar precisión del GPS"
+            app:summary="El halo cambia de tamaño y transparencia según la señal"
+            app:dependency="show_blue_dot" />
 
     </PreferenceCategory>
 

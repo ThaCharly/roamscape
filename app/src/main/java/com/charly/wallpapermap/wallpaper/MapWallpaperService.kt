@@ -177,6 +177,9 @@ class MapWallpaperService : WallpaperService() {
             if (key == SettingsManager.KEY_MOTION_SENSOR) { // Asumiendo que tenés la constante
                 LocationManager.updateSettings(applicationContext)
             }
+            if (key == SettingsManager.KEY_SHOW_BLUE_DOT || key == SettingsManager.KEY_SHOW_ACCURACY) {
+                renderer.updateBlueDot()
+            }
             if (isVisible) drawFrame()
         }
 
