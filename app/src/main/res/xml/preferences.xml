@@ -57,10 +57,10 @@
     app:iconSpaceReserved="true" />
 
     <SwitchPreference
-    android:key="use_accelerometer"
+    android:key="motion_sensor"
     android:title="Usar sensor de movimiento"
     android:summary="Pausa el GPS cuando el teléfono no se mueve, lo que ahorra batería"
-    android:defaultValue="true"
+    android:defaultValue="false"
     app:icon="@drawable/ic_motion_sensor" />
 
 
