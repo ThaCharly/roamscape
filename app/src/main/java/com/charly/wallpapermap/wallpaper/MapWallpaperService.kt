@@ -23,14 +23,16 @@ class MapWallpaperService : WallpaperService() {
         private lateinit var renderer: MapRenderer
         private lateinit var prefs: SharedPreferences
 
+        // Estado
         private var isVisible = false
         private var isAnimating = false
         private var isMoving = false
 
-        // Posición actual de la CÁMARA (Interpolada)
+        // Render targets
         private var renderLat: Double = 0.0
         private var renderLon: Double = 0.0
 
+        // Configuración original respetada
         private val FPS = 30
         private val FRAME_DELAY = (1000 / FPS).toLong()
         private val LERP_FACTOR = 0.1f
@@ -40,7 +42,7 @@ class MapWallpaperService : WallpaperService() {
 
             LocationManager.init(applicationContext)
 
-            // El punto azul usa la predicción en tiempo real
+            // Inicialización con predicción
             renderer = MapRenderer(applicationContext) {
                 LocationPredictor.predictLocation(System.currentTimeMillis())
             }
@@ -50,7 +52,7 @@ class MapWallpaperService : WallpaperService() {
             updateSettings()
         }
 
-        // Burst para evitar pantalla gris al desbloquear
+        // --- BURST FRAMES (Tu código original) ---
         private var burstFrames = 0
         private fun startBurstRender() {
             burstFrames = 6
@@ -69,7 +71,7 @@ class MapWallpaperService : WallpaperService() {
                 updateSettings()
                 startBurstRender()
 
-                // Iniciamos GPS recibiendo objeto Location
+                // LocationManager ahora devuelve Location
                 LocationManager.start { location ->
                     onLocationUpdate(location)
                 }
@@ -80,17 +82,17 @@ class MapWallpaperService : WallpaperService() {
         }
 
         private fun onLocationUpdate(location: Location) {
-            // 1. Alimentamos la física
+            // Actualizamos física
             LocationPredictor.update(location)
 
-            // 2. Inicialización
+            // Init
             if (renderLat == 0.0 && renderLon == 0.0) {
                 renderLat = location.latitude
                 renderLon = location.longitude
                 renderer.centerOn(renderLat, renderLon)
             }
 
-            // 3. Gestión de Energía: ¿Prendemos el motor gráfico?
+            // Gestión de movimiento
             val wasMoving = isMoving
             isMoving = location.speed > 0.5f
 
@@ -98,7 +100,7 @@ class MapWallpaperService : WallpaperService() {
                 startAnimationLoop()
             }
 
-            // Si estamos quietos, forzamos un frame para actualizar posición estática
+            // Frame estático si paramos
             if (!isMoving) {
                 val (predLat, predLon) = LocationPredictor.predictLocation(System.currentTimeMillis())
                 renderer.centerOn(predLat, predLon)
@@ -106,25 +108,23 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
-        // --- GAME LOOP (30 FPS) ---
+        // Loop de Renderizado (Sin rotación, solo posición)
         private val renderRunnable = object : Runnable {
             override fun run() {
                 if (!isVisible) return
 
                 val now = System.currentTimeMillis()
 
-                // A. Predicción Física (¿Dónde estamos YA?)
+                // Obtenemos posición interpolada basada en Híbrido (GPS/Brújula)
                 val (targetLat, targetLon) = LocationPredictor.predictLocation(now)
 
-                // B. Interpolación Suave de Cámara
+                // Lerp suave
                 renderLat += (targetLat - renderLat) * LERP_FACTOR
                 renderLon += (targetLon - renderLon) * LERP_FACTOR
 
-                // C. Dibujar
                 renderer.centerOn(renderLat, renderLon)
                 drawFrame()
 
-                // D. Continuidad
                 if (isMoving) {
                     handler.postDelayed(this, FRAME_DELAY)
                 } else {
