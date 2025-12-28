@@ -46,8 +46,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         // === MapRenderer para preview ===
+        // Usamos LocationPredictor.getLastKnown() para que coincida con el renderer
         previewRenderer = com.charly.wallpapermap.map.MapRenderer(this) {
-            com.charly.wallpapermap.location.LocationManager.lastKnownLocation()
+            com.charly.wallpapermap.location.LocationPredictor.getLastKnown()
         }
         binding.mapPreviewContainer.addView(previewRenderer!!.mapView)
 
@@ -57,17 +58,24 @@ class MainActivity : AppCompatActivity() {
                 override fun onGlobalLayout() {
                     previewRenderer!!.mapView.viewTreeObserver.removeOnGlobalLayoutListener(this)
 
+                    // OJO: lastKnownLocation ahora devuelve Location?
                     val lastKnown = com.charly.wallpapermap.location.LocationManager.lastKnownLocation()
                     if (lastKnown != null) {
-                        previewRenderer!!.centerOn(lastKnown.first, lastKnown.second)
+                        previewRenderer!!.centerOn(lastKnown.latitude, lastKnown.longitude)
                     } else {
-                        previewRenderer!!.centerOn(-34.8553013, -56.1936854) // Fallback (Montevideo?)
+                        previewRenderer!!.centerOn(-34.8553013, -56.1936854) // Fallback
                     }
 
-                    // Escucha actualizaciones futuras
-                    com.charly.wallpapermap.location.LocationManager.start { latlon ->
-                        // Ya no necesitamos ensureZoom/Style aquí, el renderer mantiene su estado
-                        previewRenderer!!.centerOn(latlon.first, latlon.second)
+                    // Escucha actualizaciones futuras (Ahora recibe objeto Location)
+                    com.charly.wallpapermap.location.LocationManager.start { location ->
+                        // Actualizamos el predictor también en la preview para que el punto azul se mueva
+                        com.charly.wallpapermap.location.LocationPredictor.update(location)
+                        previewRenderer!!.centerOn(location.latitude, location.longitude)
+
+                        // Opcional: Mostrar velocidad en el tvInfo que ya tenés
+                        if (location.speed > 0) {
+                            binding.tvInfo.text = "Velocidad: ${"%.1f".format(location.speed * 3.6)} km/h"
+                        }
                     }
                 }
             }
@@ -141,15 +149,14 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         (binding.mapPreviewContainer.getChildAt(0) as? org.osmdroid.views.MapView)?.onResume()
 
-        // ⚡ Actualización manual al volver de SettingsActivity
-        // Como SettingsActivity corre en otro proceso/contexto UI, al volver forzamos la lectura
         previewRenderer?.apply {
             setZoom(SettingsManager.getMapZoom(this@MainActivity).toFloat())
             applyStyle(SettingsManager.getMapStyle(this@MainActivity))
         }
 
-        com.charly.wallpapermap.location.LocationManager.start { latlon ->
-            previewRenderer?.centerOn(latlon.first, latlon.second)
+        com.charly.wallpapermap.location.LocationManager.start { location ->
+            com.charly.wallpapermap.location.LocationPredictor.update(location)
+            previewRenderer?.centerOn(location.latitude, location.longitude)
         }
     }
 

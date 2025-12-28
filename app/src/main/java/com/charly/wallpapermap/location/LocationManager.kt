@@ -9,24 +9,24 @@ import com.google.android.gms.location.*
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import android.Manifest
-import kotlin.math.abs
 
 object LocationManager {
 
     private const val TAG = "LocationManager"
 
-    // --- CONFIGURACIÓN DEL FILTRO ---
+    // Configuración del filtro
     private const val NOISE_SPEED_THRESHOLD = 0.5f // m/s
     private const val SIGNIFICANT_DISTANCE = 3.0f  // metros
-    private const val MAX_IGNORED_FIXES = 20       // "Heartbeat" forzado
+    private const val MAX_IGNORED_FIXES = 20
 
     private var context: Context? = null
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
-    private var listener: ((Pair<Double, Double>) -> Unit)? = null
-    private var isStarted = false
 
-    // Estado interno
+    // ⚠️ CAMBIO CLAVE: Devolvemos Location, no Pair
+    private var listener: ((Location) -> Unit)? = null
+
+    private var isStarted = false
     private var lastValidLocation: Location? = null
     private var ignoredFixesCount = 0
 
@@ -35,19 +35,18 @@ object LocationManager {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(ctx)
     }
 
-    // Request ÚNICA y CONSTANTE (1s)
-    // Sin modos raros. Le pedimos al GPS ritmo constante.
+    // Samsung Killer Config: 1s base, pero entrega inmediata si hay datos
     private fun createLocationRequest(): LocationRequest =
-        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 500L)
-            .setMinUpdateIntervalMillis(0L) // Aceptamos data cada medio segundo si pinta
-            .setMaxUpdateDelayMillis(0L)       // Entregalo YA
+        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+            .setMinUpdateIntervalMillis(0L)   // Aceptamos todo
+            .setMaxUpdateDelayMillis(0L)      // Latencia CERO
             .setWaitForAccurateLocation(false)
             .build()
 
     fun setUseAccelerometer(enabled: Boolean) { }
 
     @SuppressLint("MissingPermission")
-    fun start(onUpdate: (Pair<Double, Double>) -> Unit) {
+    fun start(onUpdate: (Location) -> Unit) {
         if (isStarted) return
         val ctx = context ?: error("Context no inicializado")
 
@@ -61,23 +60,20 @@ object LocationManager {
         lastValidLocation = null
         ignoredFixesCount = 0
 
-        // 1. CACHÉ INMEDIATO (Para tapar el arranque en frío)
+        // 1. Caché Inmediato
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             if (location != null) {
-                Log.d(TAG, "💾 CACHÉ RECUPERADO: ${location.latitude}, ${location.longitude}")
+                Log.d(TAG, "💾 CACHÉ RECUPERADO")
                 processValidLocation(location, "💾 CACHE")
-            } else {
-                Log.d(TAG, "🤷‍♂️ Caché vacío. Esperando al GPS...")
             }
         }
 
-        // 2. INICIO DE UPDATES (Ritmo constante)
-        Log.d(TAG, "🚀 INICIANDO GPS: 1s constante. Filtrado activo.")
+        // 2. Iniciar GPS
+        Log.d(TAG, "🚀 INICIANDO GPS: Modo Predictivo (Latencia 0)")
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val rawLocation = result.lastLocation ?: return
-                // Siempre aplicamos el filtro, desde el primer segundo.
                 filterAndProcess(rawLocation)
             }
         }
@@ -90,32 +86,25 @@ object LocationManager {
         val dist = lastValidLocation?.distanceTo(rawLocation) ?: 100f
         val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
 
-        // Si es ruido (lento Y cerca)
         if (isNoiseSpeed && !isSignificantDistance) {
             ignoredFixesCount++
-
-            // Check de paciencia (Heartbeat)
             if (ignoredFixesCount > MAX_IGNORED_FIXES) {
                 Log.w(TAG, "⚠️ FORCED UPDATE (${ignoredFixesCount})")
                 processValidLocation(rawLocation, "⏰ FORZADO")
             } else {
-                Log.v(TAG, "🗑️ Ruido descartado ($ignoredFixesCount/$MAX_IGNORED_FIXES) - Vel: ${rawLocation.speed}, Dist: $dist")
+                Log.v(TAG, "🗑️ Ruido descartado ($ignoredFixesCount)")
             }
             return
         }
-
-        // Si pasó el filtro
         processValidLocation(rawLocation, "✅ VALID")
     }
 
     private fun processValidLocation(location: Location, source: String) {
         ignoredFixesCount = 0
         lastValidLocation = location
-
-        val smoothed = LocationPredictor.update(location.latitude, location.longitude)
-
-        listener?.invoke(smoothed)
-        Log.d(TAG, "📍 $source: ${smoothed.first}, ${smoothed.second} (Vel: ${location.speed})")
+        // Pasamos el objeto completo
+        listener?.invoke(location)
+        Log.d(TAG, "📍 $source: Vel=${location.speed}m/s")
     }
 
     fun stop() {
@@ -127,7 +116,10 @@ object LocationManager {
         Log.d(TAG, "🛑 LocationManager detenido")
     }
 
-    fun lastKnownLocation(): Pair<Double, Double>? = LocationPredictor.getLastKnown()
+    // Devuelve Location para que el caller saque lat/lon/speed
+    fun lastKnownLocation(): Location? {
+        return lastValidLocation
+    }
 
     private fun hasLocationPermission(ctx: Context): Boolean {
         val fine = ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)

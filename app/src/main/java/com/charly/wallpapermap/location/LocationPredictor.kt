@@ -1,37 +1,60 @@
 package com.charly.wallpapermap.location
 
+import android.location.Location
+import kotlin.math.cos
+import kotlin.math.sin
+
 object LocationPredictor {
 
-    // ⚠️ SUBIMOS EL ALPHA: De 0.2 a 0.7
-    // Esto hace que el target se actualice casi instantáneamente.
-    // La animación visual (Lerp) se encargará de que no se vea el salto.
-    private const val ALPHA = 0.7
+    private var lastLocation: Location? = null
 
-    private var smoothedLat: Double? = null
-    private var smoothedLon: Double? = null
+    // Si pasan más de 2s sin GPS, cortamos la predicción para no desfasarnos
+    private const val MAX_PREDICTION_TIME_MS = 2000L
+    private const val EARTH_RADIUS = 6378137.0
 
-    fun update(lat: Double, lon: Double): Pair<Double, Double> {
-        if (smoothedLat == null || smoothedLon == null) {
-            smoothedLat = lat
-            smoothedLon = lon
-            return lat to lon
-        }
-
-        smoothedLat = smoothedLat!! * (1 - ALPHA) + lat * ALPHA
-        smoothedLon = smoothedLon!! * (1 - ALPHA) + lon * ALPHA
-        return smoothedLat!! to smoothedLon!!
+    fun update(location: Location) {
+        lastLocation = location
     }
 
-    // ... (El resto de los métodos como bearingTo y predictNext podés dejarlos igual o borrarlos si no los usás) ...
+    /**
+     * Calcula dónde debería estar el usuario AHORA MISMO.
+     * Retorna Pair(Lat, Lon)
+     */
+    fun predictLocation(currentTimeMs: Long): Pair<Double, Double> {
+        val base = lastLocation ?: return (0.0 to 0.0)
+
+        // Delta T: Tiempo desde el último fix real hasta ahora
+        val timeDeltaMs = currentTimeMs - base.time
+
+        // Safety checks
+        if (timeDeltaMs < 0 || timeDeltaMs > MAX_PREDICTION_TIME_MS) {
+            return base.latitude to base.longitude
+        }
+
+        val dtSeconds = timeDeltaMs / 1000.0
+        val speed = base.speed.toDouble()
+
+        // Si la velocidad es nula, nos quedamos quietos
+        if (speed < 0.1) {
+            return base.latitude to base.longitude
+        }
+
+        // --- FÍSICA: Dead Reckoning (Esférico Simple) ---
+        val distanceMeters = speed * dtSeconds
+        val bearingRad = Math.toRadians(base.bearing.toDouble())
+        val latRad = Math.toRadians(base.latitude)
+
+        val nextLatRad = latRad + (distanceMeters * cos(bearingRad)) / EARTH_RADIUS
+        val nextLonRad = Math.toRadians(base.longitude) + (distanceMeters * sin(bearingRad)) / (EARTH_RADIUS * cos(latRad))
+
+        return Math.toDegrees(nextLatRad) to Math.toDegrees(nextLonRad)
+    }
 
     fun getLastKnown(): Pair<Double, Double>? {
-        return if (smoothedLat != null && smoothedLon != null) {
-            smoothedLat!! to smoothedLon!!
-        } else null
+        return lastLocation?.let { it.latitude to it.longitude }
     }
 
     fun reset() {
-        smoothedLat = null
-        smoothedLon = null
+        lastLocation = null
     }
 }
