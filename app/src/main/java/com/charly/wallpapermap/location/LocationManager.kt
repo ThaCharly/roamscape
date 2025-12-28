@@ -121,6 +121,8 @@ object LocationManager : SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         val e = event ?: return
 
+
+
         if (e.sensor.type == Sensor.TYPE_ROTATION_VECTOR ||
             e.sensor.type == Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR) {
 
@@ -130,6 +132,8 @@ object LocationManager : SensorEventListener {
             var azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
             if (azimuth < 0) azimuth += 360f
 
+
+
             // Filtro suave (Lerp)
             currentCompassBearing = currentCompassBearing * 0.9f + azimuth * 0.1f
         }
@@ -137,12 +141,20 @@ object LocationManager : SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { }
 
+    private var useCompassMode = true
+
     private fun filterAndProcess(rawLocation: Location) {
         // Guardamos el bearing ORIGINAL del GPS antes de sobrescribirlo
         val originalGpsBearing = rawLocation.bearing
 
-        // --- INYECCIÓN HÍBRIDA (1.5 m/s) ---
-        if (rawLocation.speed < 1.5f && hasCompass) {
+        if (useCompassMode && rawLocation.speed > 2.0f) {
+            useCompassMode = false // Vamos rápido, pasamos a GPS
+        } else if (!useCompassMode && rawLocation.speed < 1.0f) {
+            useCompassMode = true // Frenamos, volvemos a Brújula
+        }
+
+        // Usamos el flag estable
+        if (useCompassMode && hasCompass) {
             rawLocation.bearing = currentCompassBearing
         }
 
