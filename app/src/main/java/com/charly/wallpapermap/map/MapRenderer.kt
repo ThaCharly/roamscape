@@ -36,6 +36,8 @@ class MapRenderer(
         mapView.overlays.add(scaleBarOverlay)
     }
 
+
+
     fun setZoom(zoomLevel: Float) {
         if (mapView.zoomLevelDouble.toFloat() != zoomLevel) {
             mapView.controller.setZoom(zoomLevel.toDouble())

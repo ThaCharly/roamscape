@@ -95,6 +95,7 @@ object LocationManager : SensorEventListener {
         listener = onUpdate
         lastValidLocation = null
         ignoredFixesCount = 0
+        useCompassMode = true
 
         useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
         lastMovementTimestamp = System.currentTimeMillis()
@@ -183,6 +184,20 @@ object LocationManager : SensorEventListener {
                 }
             }
         }
+    }
+
+    fun updateSettings(ctx: Context) {
+        useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
+        // Si lo apagaron, nos aseguramos de despertar todo por si estábamos durmiendo
+        if (!useMotionSensorFeature) {
+            lastMovementTimestamp = System.currentTimeMillis()
+            if (isGpsPaused) {
+                isGpsPaused = false
+                startGpsUpdates()
+            }
+            isInSoftSleep = false
+        }
+        Log.d(TAG, "⚙️ Configuración actualizada. MotionSensor: $useMotionSensorFeature")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {

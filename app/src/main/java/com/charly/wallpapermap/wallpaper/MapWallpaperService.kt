@@ -174,6 +174,9 @@ class MapWallpaperService : WallpaperService() {
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
             if (key == SettingsManager.KEY_MAP_STYLE) renderer.applyStyle(SettingsManager.getMapStyle(applicationContext))
             if (key == SettingsManager.KEY_ZOOM) renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
+            if (key == SettingsManager.KEY_MOTION_SENSOR) { // Asumiendo que tenés la constante
+                LocationManager.updateSettings(applicationContext)
+            }
             if (isVisible) drawFrame()
         }
 
