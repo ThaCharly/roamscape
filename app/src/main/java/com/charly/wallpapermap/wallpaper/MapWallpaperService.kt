@@ -6,13 +6,13 @@ import android.os.Handler
 import android.os.Looper
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
+import android.view.View
 import androidx.preference.PreferenceManager
 import com.charly.wallpapermap.location.LocationManager
 import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
-import org.osmdroid.util.GeoPoint
 import android.util.Log
-import android.view.View
+import kotlin.math.abs
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -22,72 +22,167 @@ class MapWallpaperService : WallpaperService() {
         private lateinit var renderer: MapRenderer
         private lateinit var prefs: SharedPreferences
 
-        private var burstFrames = 0
-        private var lastLocation: GeoPoint? = null
-        private var isRendering = false
-        private var isLocationActive = false
+        // Estado de Renderizado
+        private var isVisible = false
+        private var isAnimating = false
+
+        // Coordenadas para Interpolación (Lerp)
+        private var targetLat: Double = 0.0
+        private var targetLon: Double = 0.0
+        private var currentLat: Double = 0.0
+        private var currentLon: Double = 0.0
+
+        // Configuración de animación
+        private val FPS = 30
+        private val FRAME_DELAY = (1000 / FPS).toLong() // ~33ms
+        private val LERP_FACTOR = 0.1f // Qué tan rápido se acerca al target (0.1 = suave, 0.3 = rápido)
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
 
-            // Inicializar LocationManager (Global)
             LocationManager.init(applicationContext)
-
-            // Inicializar Renderer
             renderer = MapRenderer(applicationContext) {
-                lastLocation?.let { it.latitude to it.longitude }
+                // El punto azul sigue mostrando la "realidad interpolada"
+                currentLat to currentLon
             }
 
-            // Registrar escucha de preferencias
             prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
             prefs.registerOnSharedPreferenceChangeListener(this)
-
-            // Cargar estado inicial
             updateSettings()
         }
 
+        // Esto se da cuando se prende el teléfono, una forma de asegurar dibujar el mapa en tiempo y forma al hacerse visible el wallpaper, provisorio
+
+        private var burstFrames = 0
+
+        private fun startBurstRender() {
+            burstFrames = 6
+            drawBurstFrame()
+        }
+
+        private fun drawBurstFrame() {
+            if (burstFrames <= 0) return
+            drawFrame()
+            burstFrames--
+            handler.postDelayed({ drawBurstFrame() }, 150)
+        }
+
         override fun onVisibilityChanged(visible: Boolean) {
-            isRendering = visible
+            isVisible = visible
             if (visible) {
-                // Al volver visible, forzamos actualización de settings por si cambiaron mientras estaba oculto
                 updateSettings()
                 startBurstRender()
 
-                if (!isLocationActive) {
-                    isLocationActive = true
-                    LocationManager.start { loc ->
-                        val newPoint = GeoPoint(loc.first, loc.second)
-                        if (shouldUpdate(newPoint)) {
-                            lastLocation = newPoint
-                            // Centramos y dibujamos
-                            renderer.centerOn(loc.first, loc.second)
-                            drawFrame()
-                        }
-                    }
+                // Iniciamos GPS
+                LocationManager.start { loc ->
+                    updateTargetLocation(loc.first, loc.second)
                 }
             } else {
-                if (isLocationActive) {
-                    isLocationActive = false
-                    LocationManager.stop()
+                LocationManager.stop()
+                stopAnimationLoop()
+            }
+        }
+
+        // --- MAGIA: Recibimos el target y despertamos el loop ---
+        private fun updateTargetLocation(lat: Double, lon: Double) {
+            // Si es la primera vez, teletransportamos para no viajar desde el (0,0)
+            if (currentLat == 0.0 && currentLon == 0.0) {
+                currentLat = lat
+                currentLon = lon
+                renderer.centerOn(lat, lon)
+                drawFrame() // Un cuadro estático inicial
+            }
+
+            targetLat = lat
+            targetLon = lon
+
+            // Si no estamos animando, arrancamos el loop
+            if (!isAnimating && isVisible) {
+                startAnimationLoop()
+            }
+        }
+
+        private val renderRunnable = object : Runnable {
+            override fun run() {
+                if (!isVisible) return
+
+                // 1. Interpolación (Lerp)
+                // Nos movemos un % de la distancia hacia el objetivo
+                currentLat += (targetLat - currentLat) * LERP_FACTOR
+                currentLon += (targetLon - currentLon) * LERP_FACTOR
+
+                // 2. Mover Mapa y Dibujar
+                renderer.centerOn(currentLat, currentLon)
+                drawFrame()
+
+                // 3. Chequeo de parada ("On Demand")
+                // Si estamos muy cerca, cortamos el loop para ahorrar batería
+                val diffLat = abs(targetLat - currentLat)
+                val diffLon = abs(targetLon - currentLon)
+
+                if (diffLat < 0.0000005 && diffLon < 0.0000005) {
+                    // Ya llegamos ("snap" final para asegurar)
+                    currentLat = targetLat
+                    currentLon = targetLon
+                    renderer.centerOn(currentLat, currentLon)
+                    drawFrame()
+                    isAnimating = false // Se duerme
+                    // No llamamos a postDelayed
+                } else {
+                    // Seguimos bailando
+                    handler.postDelayed(this, FRAME_DELAY)
                 }
             }
         }
 
-        // 👂 Escuchamos cambios en tiempo real
-        override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-            when (key) {
-                SettingsManager.KEY_MAP_STYLE -> {
-                    renderer.applyStyle(SettingsManager.getMapStyle(applicationContext))
-                    drawFrame()
+        private fun startAnimationLoop() {
+            isAnimating = true
+            handler.removeCallbacks(renderRunnable) // Por seguridad
+            handler.post(renderRunnable)
+        }
+
+        private fun stopAnimationLoop() {
+            isAnimating = false
+            handler.removeCallbacks(renderRunnable)
+        }
+
+        // --- Renderizado Estándar ---
+        private fun drawFrame() {
+            val holder: SurfaceHolder = surfaceHolder
+            var canvas: Canvas? = null
+            try {
+                canvas = holder.lockCanvas()
+                if (canvas != null) {
+                    val mapView = renderer.mapView
+                    val width = canvas.width
+                    val height = canvas.height
+
+                    // Medimos una vez
+                    if (mapView.width != width || mapView.height != height) {
+                        val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+                        val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+                        mapView.measure(wSpec, hSpec)
+                        mapView.layout(0, 0, width, height)
+                    }
+
+                    mapView.draw(canvas)
                 }
-                SettingsManager.KEY_ZOOM -> {
-                    renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
-                    drawFrame()
-                }
+            } catch (e: Exception) {
+                Log.e("MapEngine", "Error drawing", e)
+            } finally {
+                canvas?.let { holder.unlockCanvasAndPost(it) }
             }
+        }
+
+        override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+            // Actualización simple de settings
+            if (key == SettingsManager.KEY_MAP_STYLE) renderer.applyStyle(SettingsManager.getMapStyle(applicationContext))
+            if (key == SettingsManager.KEY_ZOOM) renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
+            if (isVisible) drawFrame() // Redibujar forzado al cambiar config
         }
 
         private fun updateSettings() {
+            // (Igual que antes)
             val ctx = applicationContext
             renderer.applyStyle(SettingsManager.getMapStyle(ctx))
             renderer.setZoom(SettingsManager.getMapZoom(ctx).toFloat())
@@ -97,54 +192,6 @@ class MapWallpaperService : WallpaperService() {
             super.onDestroy()
             prefs.unregisterOnSharedPreferenceChangeListener(this)
             LocationManager.stop()
-            Log.d("MapEngine", "Engine destruido")
-        }
-
-        private fun startBurstRender() {
-            burstFrames = 3
-            drawBurstFrame()
-        }
-
-        private fun drawBurstFrame() {
-            if (burstFrames <= 0) return
-            drawFrame()
-            burstFrames--
-            handler.postDelayed({ drawBurstFrame() }, 170)
-        }
-
-        private fun drawFrame() {
-            if (!isRendering) return
-            val holder: SurfaceHolder = surfaceHolder
-            var canvas: Canvas? = null
-            try {
-                canvas = holder.lockCanvas()
-                if (canvas != null) {
-                    val mapView = renderer.mapView
-
-                    // Medir y Layout manual porque no somos una View normal
-                    val width = canvas.width
-                    val height = canvas.height
-                    val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-                    val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-
-                    mapView.measure(widthSpec, heightSpec)
-                    mapView.layout(0, 0, width, height)
-
-                    // ❌ YA NO hacemos ensureZoomUpdated ni ensureStyleUpdated aquí.
-                    // El renderer ya tiene los datos correctos gracias al listener.
-
-                    mapView.draw(canvas)
-                }
-            } catch (e: Exception) {
-                Log.e("MapEngine", "Error en drawFrame", e)
-            } finally {
-                canvas?.let { holder.unlockCanvasAndPost(it) }
-            }
-        }
-
-        private fun shouldUpdate(newPoint: GeoPoint): Boolean {
-            val last = lastLocation ?: return true
-            return newPoint.distanceToAsDouble(last) > 2.0 // metros
         }
     }
 }
