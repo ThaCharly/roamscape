@@ -13,4 +13,21 @@
         <item>CARTO_VOYAGER</item>
         <item>CARTO_LIGHT</item>
     </string-array>
+
+
+    <string-array name="fps_names">
+        <item>24 FPS (Ahorro Batería)</item>
+        <item>48 FPS (Balanceado - Default)</item>
+        <item>60 FPS (Fluido)</item>
+        <item>80 FPS (Alto Rendimiento)</item>
+        <item>120 FPS (Ultra Fluido)</item>
+    </string-array>
+
+    <string-array name="fps_values">
+        <item>24</item>
+        <item>48</item>
+        <item>60</item>
+        <item>80</item>
+        <item>120</item>
+    </string-array>
 </resources>

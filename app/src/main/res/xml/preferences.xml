@@ -62,12 +62,25 @@
     app:icon="@drawable/ic_trash"
     app:iconSpaceReserved="true" />
 
-    <SwitchPreference
-    android:key="motion_sensor"
-    android:title="Usar sensor de movimiento"
-    android:summary="Pausa el GPS cuando el teléfono no se mueve, lo que ahorra batería"
-    android:defaultValue="false"
-    app:icon="@drawable/ic_motion_sensor" />
+<PreferenceCategory app:title="Rendimiento">
+        
+        <ListPreference
+            app:defaultValue="48"
+            app:entries="@array/fps_names"
+            app:entryValues="@array/fps_values"
+            app:key="target_fps"
+            app:title="Tasa de cuadros (FPS)"
+            app:summary="Más FPS = Más fluidez, pero consume más batería." 
+            app:icon="@drawable/ic_speed" /> 
+            <CheckBoxPreference
+            app:defaultValue="false"
+            app:key="motion_sensor"
+            app:title="Usar sensor de movimiento"
+            app:summary="Pausa el GPS cuando el teléfono no se mueve físicamente (Ahorra batería)" />
+            
+    </PreferenceCategory>
+
+    
 
 
 </PreferenceScreen>

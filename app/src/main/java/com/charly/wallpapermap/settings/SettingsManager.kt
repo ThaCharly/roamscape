@@ -10,6 +10,7 @@ object SettingsManager {
     const val KEY_MOTION_SENSOR = "motion_sensor"
     // Nueva Key
     const val KEY_SHOW_ACCURACY = "show_accuracy_halo"
+    const val KEY_TARGET_FPS = "target_fps"
 
     fun ensureDefaults(context: Context) {
         PreferenceManager.setDefaultValues(context, com.charly.wallpapermap.R.xml.preferences, false)
@@ -30,4 +31,10 @@ object SettingsManager {
 
     fun isMotionSensorEnabled(context: Context): Boolean =
         PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_MOTION_SENSOR, false)
+
+    fun getTargetFps(context: Context): Int {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        // ListPreference guarda strings, así que parseamos a Int. Default 48.
+        return prefs.getString(KEY_TARGET_FPS, "48")?.toIntOrNull() ?: 48
+    }
 }

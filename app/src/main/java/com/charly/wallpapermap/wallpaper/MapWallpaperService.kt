@@ -32,9 +32,8 @@ class MapWallpaperService : WallpaperService() {
         private var renderLat: Double = 0.0
         private var renderLon: Double = 0.0
 
-        // Configuración original respetada
-        private val FPS = 30
-        private val FRAME_DELAY = (1000 / FPS).toLong()
+        // Configuración de Rendimiento (Dinámico)
+        private var frameDelay: Long = 33L // Default (aprox 30fps por seguridad)
         private val LERP_FACTOR = 0.1f
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
@@ -42,65 +41,62 @@ class MapWallpaperService : WallpaperService() {
 
             LocationManager.init(applicationContext)
 
-            // Inicialización con predicción
             renderer = MapRenderer(applicationContext) {
                 LocationPredictor.predictLocation(System.currentTimeMillis())
             }
 
             prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
             prefs.registerOnSharedPreferenceChangeListener(this)
-            updateSettings()
+            updateSettings() // Carga FPS y Estilos
         }
 
-        // --- BURST FRAMES (Tu código original) ---
         private var burstFrames = 0
         private fun startBurstRender() {
-            burstFrames = 6
+            burstFrames = 4
             drawBurstFrame()
         }
         private fun drawBurstFrame() {
             if (burstFrames <= 0) return
             drawFrame()
             burstFrames--
-            handler.postDelayed({ drawBurstFrame() }, 150)
+            handler.postDelayed({ drawBurstFrame() }, 100) // Un poquito más rápido el burst
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
             isVisible = visible
             if (visible) {
+                drawFrame()
                 updateSettings()
                 startBurstRender()
 
-                // LocationManager ahora devuelve Location
                 LocationManager.start { location ->
                     onLocationUpdate(location)
                 }
             } else {
                 LocationManager.stop()
                 stopAnimationLoop()
+                isMoving = false
             }
         }
 
         private fun onLocationUpdate(location: Location) {
-            // Actualizamos física
             LocationPredictor.update(location)
 
-            // Init
             if (renderLat == 0.0 && renderLon == 0.0) {
                 renderLat = location.latitude
                 renderLon = location.longitude
                 renderer.centerOn(renderLat, renderLon)
             }
 
-            // Gestión de movimiento
-            val wasMoving = isMoving
+            // FIX SHERLOCK 2: Lógica robusta de estado
             isMoving = location.speed > 0.5f
 
-            if (isMoving && !wasMoving) {
+            // Si hay movimiento y el motor está apagado, lo prendemos.
+            if (isMoving && !isAnimating) {
                 startAnimationLoop()
             }
 
-            // Frame estático si paramos
+            // Si estamos quietos, frame estático de corrección
             if (!isMoving) {
                 val (predLat, predLon) = LocationPredictor.predictLocation(System.currentTimeMillis())
                 renderer.centerOn(predLat, predLon)
@@ -108,17 +104,13 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
-        // Loop de Renderizado (Sin rotación, solo posición)
         private val renderRunnable = object : Runnable {
             override fun run() {
                 if (!isVisible) return
 
                 val now = System.currentTimeMillis()
-
-                // Obtenemos posición interpolada basada en Híbrido (GPS/Brújula)
                 val (targetLat, targetLon) = LocationPredictor.predictLocation(now)
 
-                // Lerp suave
                 renderLat += (targetLat - renderLat) * LERP_FACTOR
                 renderLon += (targetLon - renderLon) * LERP_FACTOR
 
@@ -126,7 +118,8 @@ class MapWallpaperService : WallpaperService() {
                 drawFrame()
 
                 if (isMoving) {
-                    handler.postDelayed(this, FRAME_DELAY)
+                    // Usamos el delay calculado dinámicamente según los FPS elegidos
+                    handler.postDelayed(this, frameDelay)
                 } else {
                     isAnimating = false
                 }
@@ -172,21 +165,40 @@ class MapWallpaperService : WallpaperService() {
         }
 
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+            // Estilos
             if (key == SettingsManager.KEY_MAP_STYLE) renderer.applyStyle(SettingsManager.getMapStyle(applicationContext))
             if (key == SettingsManager.KEY_ZOOM) renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
-            if (key == SettingsManager.KEY_MOTION_SENSOR) { // Asumiendo que tenés la constante
+
+            // Motion Sensor (Hot Reload)
+            if (key == SettingsManager.KEY_MOTION_SENSOR) {
                 LocationManager.updateSettings(applicationContext)
             }
+
+            // Blue Dot (Hot Reload)
             if (key == SettingsManager.KEY_SHOW_BLUE_DOT || key == SettingsManager.KEY_SHOW_ACCURACY) {
                 renderer.updateBlueDot()
             }
+
+            // FPS (Hot Reload)
+            if (key == SettingsManager.KEY_TARGET_FPS) {
+                updateFpsConfig()
+            }
+
             if (isVisible) drawFrame()
         }
 
+        // Método dedicado para leer FPS y calcular el delay
         private fun updateSettings() {
             val ctx = applicationContext
             renderer.applyStyle(SettingsManager.getMapStyle(ctx))
             renderer.setZoom(SettingsManager.getMapZoom(ctx).toFloat())
+            updateFpsConfig()
+        }
+
+        private fun updateFpsConfig() {
+            val fps = SettingsManager.getTargetFps(applicationContext)
+            frameDelay = (1000 / fps).toLong()
+            Log.d("MapEngine", "🚀 FPS Objetivo actualizado a: $fps (Delay: ${frameDelay}ms)")
         }
 
         override fun onDestroy() {
