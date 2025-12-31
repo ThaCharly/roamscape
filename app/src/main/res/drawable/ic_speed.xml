@@ -5,24 +5,19 @@
     android:viewportHeight="24"
     android:tint="?attr/colorControlNormal">
 
-    <!-- Rectángulo de fondo -->
-    <path
-        android:fillColor="@android:color/white"
-        android:pathData="M4,4h16v16H4z" />
-
     <!-- Letra F -->
     <path
-        android:fillColor="@android:color/black"
+        android:fillColor="@android:color/white"
         android:pathData="M9,8h2v2h-2zM9,11h4v2h-4z" />
 
     <!-- Letra P -->
     <path
-        android:fillColor="@android:color/black"
+        android:fillColor="@android:color/white"
         android:pathData="M14,8h2v2h-2zM14,10h2v2h-2zM14,12h3v2h-3z" />
 
     <!-- Letra S -->
     <path
-        android:fillColor="@android:color/black"
+        android:fillColor="@android:color/white"
         android:pathData="M18,8h2v2h-2zM18,12h2v2h-2zM18,10h1v2h1v-2z" />
 
 </vector>
