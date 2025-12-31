@@ -32,6 +32,20 @@ class MapWallpaperService : WallpaperService() {
         private var renderLat: Double = 0.0
         private var renderLon: Double = 0.0
 
+        // --- DEBUG FPS ---
+        private var debugLastTime = 0L
+        private var debugFrameCount = 0
+        private var debugActualFps = 0
+
+        private val fpsPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.GREEN
+            textSize = 60f
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+            setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK) // Sombra negra para leerlo bien
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+
         // Configuración de Rendimiento (Dinámico)
         private var frameDelay: Long = 33L // Default (aprox 30fps por seguridad)
         private val LERP_FACTOR = 0.1f
@@ -156,6 +170,26 @@ class MapWallpaperService : WallpaperService() {
                         mapView.layout(0, 0, width, height)
                     }
                     mapView.draw(canvas)
+// 1. Contar Frames
+                    val now = System.currentTimeMillis()
+                    debugFrameCount++
+
+                    // Cada 1 segundo, actualizamos el contador visible
+                    if (now - debugLastTime >= 1000) {
+                        debugActualFps = debugFrameCount
+                        debugFrameCount = 0
+                        debugLastTime = now
+                        // Opcional: Loguearlo también
+                         Log.d("MapFPS", "Rendimiento Real: $debugActualFps FPS")
+                    }
+
+                    // 2. Dibujar en pantalla (Esquina superior izquierda)
+                    // Solo dibujamos si hay FPS calculados para no mostrar 0 al inicio
+                    if (debugActualFps > 0) {
+                        canvas.drawText("FPS: $debugActualFps", 50f, 100f, fpsPaint)
+                    }
+
+                    // ==============================
                 }
             } catch (e: Exception) {
                 Log.e("MapEngine", "Error drawing", e)
