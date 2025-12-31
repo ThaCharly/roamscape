@@ -24,7 +24,7 @@ object LocationManager : SensorEventListener {
     // --- CONFIGURACIÓN ---
     private const val NOISE_SPEED_THRESHOLD = 0.5f
     private const val SIGNIFICANT_DISTANCE = 3.0f
-    private const val MAX_IGNORED_FIXES = 30
+    private const val MAX_IGNORED_FIXES = 20
 
     // --- CONFIGURACIÓN DE SIESTA (SLEEP MODE) ---
     private const val MOTION_THRESHOLD = 0.5f
@@ -32,8 +32,8 @@ object LocationManager : SensorEventListener {
     private const val HARD_SLEEP_TIMEOUT_MS = 90_000L // 90s
 
     // Configuración del Buffer de Confianza GPS
-    private const val GPS_MOTION_CONFIDENCE_THRESHOLD = 3 // Necesitamos 3 "puntos" para confiar
-    private var gpsMotionConfidence = 0 // Acumulador (0 a 3)
+    private const val GPS_MOTION_CONFIDENCE_THRESHOLD = 3
+    private var gpsMotionConfidence = 0
 
     private var context: Context? = null
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -60,7 +60,6 @@ object LocationManager : SensorEventListener {
     private val rotationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
 
-    // Timestamp del último movimiento detectado (Sensor O GPS)
     private var lastMovementTimestamp: Long = 0L
 
     fun init(ctx: Context) {
@@ -91,10 +90,12 @@ object LocationManager : SensorEventListener {
         isStarted = true
         isGpsPaused = false
         isInSoftSleep = false
-        gpsMotionConfidence = 0 // Reiniciamos confianza
+        gpsMotionConfidence = 0
         listener = onUpdate
         lastValidLocation = null
         ignoredFixesCount = 0
+
+        // OPTIMIZACIÓN: Resetear estado del modo brújula al iniciar
         useCompassMode = true
 
         useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
@@ -118,6 +119,29 @@ object LocationManager : SensorEventListener {
         Log.d(TAG, "🚀 LocationManager iniciado. SensorMovimiento: $useMotionSensorFeature")
     }
 
+    // Método para actualización en caliente de configuración
+    fun updateSettings(ctx: Context) {
+        val newState = SettingsManager.isMotionSensorEnabled(ctx)
+        if (newState != useMotionSensorFeature) {
+            useMotionSensorFeature = newState
+
+            // Re-evaluar sensores si cambió la config
+            sensorManager?.unregisterListener(this)
+            startSensors()
+
+            // Si lo apagaron, despertar todo
+            if (!useMotionSensorFeature) {
+                lastMovementTimestamp = System.currentTimeMillis()
+                if (isGpsPaused) {
+                    isGpsPaused = false
+                    startGpsUpdates()
+                }
+                isInSoftSleep = false
+            }
+            Log.d(TAG, "⚙️ Configuración actualizada. MotionSensor: $useMotionSensorFeature")
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private fun startGpsUpdates() {
         if (locationCallback != null) return
@@ -129,7 +153,6 @@ object LocationManager : SensorEventListener {
                 if (useMotionSensorFeature) {
                     val timeSinceMove = System.currentTimeMillis() - lastMovementTimestamp
 
-                    // A. Hard Sleep Check (> 90s)
                     if (timeSinceMove > HARD_SLEEP_TIMEOUT_MS) {
                         Log.d(TAG, "💤 HARD SLEEP: Sin movimiento por ${HARD_SLEEP_TIMEOUT_MS/1000}s. Apagando GPS.")
                         stopGpsUpdates()
@@ -137,22 +160,18 @@ object LocationManager : SensorEventListener {
                         return
                     }
 
-                    // B. Soft Sleep Check (> 30s)
                     if (timeSinceMove > SOFT_SLEEP_TIMEOUT_MS) {
                         if (!isInSoftSleep) {
-                            Log.d(TAG, "💤 SOFT SLEEP: Sin movimiento por ${SOFT_SLEEP_TIMEOUT_MS/1000}s. Entrando en modo reposo (Ignorando fixes).")
+                            Log.d(TAG, "💤 SOFT SLEEP: Sin movimiento por ${SOFT_SLEEP_TIMEOUT_MS/1000}s. Entrando en modo reposo.")
                             isInSoftSleep = true
                         }
-                        // Seguimos procesando para ver si llega un GPS válido que nos despierte,
-                        // PERO solo "contamos" confianza, no notificamos a la UI a menos que despierte.
                     } else {
                         if (isInSoftSleep) {
-                            Log.d(TAG, "⚡ WAKE UP: Tiempo de movimiento reseteado externamente. Saliendo de Soft Sleep.")
+                            Log.d(TAG, "⚡ WAKE UP: Tiempo de movimiento reseteado externamente.")
                             isInSoftSleep = false
                         }
                     }
                 }
-
                 filterAndProcess(rawLocation)
             }
         }
@@ -166,11 +185,13 @@ object LocationManager : SensorEventListener {
 
     private fun startSensors() {
         sensorManager?.let { sm ->
+            // OPTIMIZACIÓN OBLIGATORIA: Usar SENSOR_DELAY_NORMAL (200ms) en lugar de UI (60ms)
+            // Ahorra batería y CPU. La interpolación hace que se vea suave igual.
             val rotationSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
                 ?: sm.getDefaultSensor(Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR)
 
             if (rotationSensor != null) {
-                sm.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI)
+                sm.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_NORMAL)
                 hasCompass = true
             }
 
@@ -184,20 +205,6 @@ object LocationManager : SensorEventListener {
                 }
             }
         }
-    }
-
-    fun updateSettings(ctx: Context) {
-        useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
-        // Si lo apagaron, nos aseguramos de despertar todo por si estábamos durmiendo
-        if (!useMotionSensorFeature) {
-            lastMovementTimestamp = System.currentTimeMillis()
-            if (isGpsPaused) {
-                isGpsPaused = false
-                startGpsUpdates()
-            }
-            isInSoftSleep = false
-        }
-        Log.d(TAG, "⚙️ Configuración actualizada. MotionSensor: $useMotionSensorFeature")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -215,7 +222,7 @@ object LocationManager : SensorEventListener {
             currentCompassBearing = currentCompassBearing * 0.9f + azimuth * 0.1f
         }
 
-        // --- B. DETECCIÓN DE MOVIMIENTO (Sleep Mode) ---
+        // --- B. DETECCIÓN DE MOVIMIENTO ---
         if (useMotionSensorFeature &&
             (e.sensor.type == Sensor.TYPE_LINEAR_ACCELERATION || e.sensor.type == Sensor.TYPE_ACCELEROMETER)) {
 
@@ -227,7 +234,6 @@ object LocationManager : SensorEventListener {
             if (magnitude > MOTION_THRESHOLD) {
                 lastMovementTimestamp = System.currentTimeMillis()
 
-                // Reiniciamos confianza GPS también, porque el sensor ya confirmó movimiento
                 gpsMotionConfidence = GPS_MOTION_CONFIDENCE_THRESHOLD
 
                 if (isGpsPaused) {
@@ -244,13 +250,11 @@ object LocationManager : SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { }
 
-    // --- LÓGICA DE FILTRO Y BEARINGS ---
     private var useCompassMode = true
 
     private fun filterAndProcess(rawLocation: Location) {
         val originalGpsBearing = rawLocation.bearing
 
-        // Histéresis Brújula vs GPS
         if (useCompassMode && rawLocation.speed > 2.0f) {
             useCompassMode = false
         } else if (!useCompassMode && rawLocation.speed < 1.0f) {
@@ -261,47 +265,31 @@ object LocationManager : SensorEventListener {
             rawLocation.bearing = currentCompassBearing
         }
 
-        // --- FILTRO DE RUIDO ---
         val dist = lastValidLocation?.distanceTo(rawLocation) ?: 100f
         val isNoiseSpeed = rawLocation.speed < NOISE_SPEED_THRESHOLD
         val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
 
         if (isNoiseSpeed && !isSignificantDistance) {
-            // ES RUIDO (o estamos quietos)
-
-            // Bajamos confianza de movimiento GPS (Buffer se vacía de a poco)
             if (gpsMotionConfidence > 0) gpsMotionConfidence--
-
             ignoredFixesCount++
             if (ignoredFixesCount > MAX_IGNORED_FIXES) {
-                // Heartbeat forzado
                 if (!isInSoftSleep) {
                     processValidLocation(rawLocation, "⏰ FORZADO", originalGpsBearing)
                 }
-            } else {
-                Log.v(TAG, "🗑️ Ruido ($ignoredFixesCount) | Vel: ${"%.2f".format(rawLocation.speed)} | ConfianzaGPS: $gpsMotionConfidence")
             }
             return
         }
 
-        // ES VÁLIDO (Hay movimiento aparente)
-
-        // --- BUFFER DE CONFIANZA ---
-        // Sumamos confianza hasta llegar al tope
         if (gpsMotionConfidence < GPS_MOTION_CONFIDENCE_THRESHOLD) {
             gpsMotionConfidence++
         }
 
-        // Si llenamos el buffer, confirmamos movimiento y reseteamos el timer de sueño
         if (gpsMotionConfidence >= GPS_MOTION_CONFIDENCE_THRESHOLD) {
             if (useMotionSensorFeature) {
-                // Actualizamos timestamp para que no se duerma
                 val now = System.currentTimeMillis()
-                // Logueamos solo si estábamos en peligro de dormirnos o dormidos
                 if (isInSoftSleep || (now - lastMovementTimestamp > 5000)) {
-                    // Si estábamos dormidos, avisamos fuerte
                     if (isInSoftSleep) {
-                        Log.d(TAG, "🛰️ GPS WAKE UP: 3 fixes válidos seguidos. Saliendo de Soft Sleep.")
+                        Log.d(TAG, "🛰️ GPS WAKE UP: 3 fixes válidos seguidos.")
                     }
                 }
                 lastMovementTimestamp = now
@@ -309,10 +297,7 @@ object LocationManager : SensorEventListener {
             }
         }
 
-        // Si estamos en Soft Sleep y el buffer no está lleno, IGNORAMOS el fix.
-        // Esto evita que un solo salto de GPS pinte el mapa cuando debería estar quieto.
         if (isInSoftSleep && gpsMotionConfidence < GPS_MOTION_CONFIDENCE_THRESHOLD) {
-            Log.v(TAG, "💤 Soft Sleep: Ignorando fix válido aislado (Confianza: $gpsMotionConfidence/3)")
             return
         }
 

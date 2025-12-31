@@ -13,6 +13,9 @@ class BlueDotOverlay(
     private val getLocation: () -> Pair<Double, Double>?
 ) : Overlay() {
 
+    // OPTIMIZACIÓN OBLIGATORIA: Reutilizar el objeto Point para evitar basura en el GC
+    private val screenPoint = Point()
+
     private val paintInner = Paint().apply {
         color = 0xFF4285F4.toInt() // Azul Material Google
         style = Paint.Style.FILL
@@ -27,16 +30,14 @@ class BlueDotOverlay(
     }
 
     private val paintHalo = Paint().apply {
-        color = 0x404285F4.toInt() // Azul transparente base (se modificará el alpha dinámicamente)
+        color = 0x404285F4.toInt()
         style = Paint.Style.FILL
         isAntiAlias = true
     }
 
-    // Configuración visual
     private val baseInnerRadius = 20f
-    private val baseHaloRadius = 60f // Tamaño mínimo del halo (cuando precisión es perfecta o desconocida)
+    private val baseHaloRadius = 60f
 
-    // Estado (seteado desde MapRenderer)
     var showAccuracyHalo = true
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -44,41 +45,46 @@ class BlueDotOverlay(
 
         val loc = getLocation() ?: return
         val geoPoint = GeoPoint(loc.first, loc.second)
-        val pt = Point()
-        mapView.projection.toPixels(geoPoint, pt)
 
-        // 1. Calcular Radio del Halo según Precisión
+        // OPTIMIZACIÓN: Usamos el objeto existente en lugar de crear uno nuevo
+        mapView.projection.toPixels(geoPoint, screenPoint)
+
         var haloRadius = baseHaloRadius
-        var haloAlpha = 60 // Alpha base (aprox 25%)
+        var haloAlpha = 60
 
         if (showAccuracyHalo) {
             val accuracyMeters = LocationPredictor.getLastAccuracy()
             if (accuracyMeters > 0) {
-                // Convertimos metros de precisión a píxeles en el mapa actual
                 val metersToPixels = mapView.projection.metersToPixels(accuracyMeters)
-
-                // El halo nunca es menor que el baseHaloRadius, pero puede crecer
                 haloRadius = max(baseHaloRadius, metersToPixels)
 
-                // 2. Lógica de Transparencia
-                // Si el radio crece mucho (mala señal o mucho zoom), lo hacemos más transparente
-                // para que no sea una mancha azul gigante que tape el mapa.
-                // Fórmula: A mayor radio, menor alpha.
                 if (haloRadius > baseHaloRadius) {
-                    val scaleFactor = baseHaloRadius / haloRadius // 1.0 -> 0.0
+                    val scaleFactor = baseHaloRadius / haloRadius
                     haloAlpha = (60 * scaleFactor).toInt().coerceIn(10, 60)
                 }
             }
         }
 
-        // Dibujar Halo (Solo si está activado)
-        if (showAccuracyHalo) {
-            paintHalo.alpha = haloAlpha
-            canvas.drawCircle(pt.x.toFloat(), pt.y.toFloat(), haloRadius, paintHalo)
+        // OPTIMIZACIÓN OBLIGATORIA: Clipping (Recorte)
+        // Si el punto (más su radio máximo) está fuera de la pantalla, no dibujamos nada.
+        // Esto ahorra mucho proceso de GPU cuando scrolleás lejos de tu ubicación.
+        val maxDrawRadius = if (showAccuracyHalo) haloRadius else baseInnerRadius + 4f
+        val width = canvas.width
+        val height = canvas.height
+
+        if (screenPoint.x + maxDrawRadius < 0 || screenPoint.x - maxDrawRadius > width ||
+            screenPoint.y + maxDrawRadius < 0 || screenPoint.y - maxDrawRadius > height) {
+            return
         }
 
-        // Dibujar Punto Central (Fijo) y Borde
-        canvas.drawCircle(pt.x.toFloat(), pt.y.toFloat(), baseInnerRadius, paintStroke) // Borde blanco
-        canvas.drawCircle(pt.x.toFloat(), pt.y.toFloat(), baseInnerRadius, paintInner)  // Punto azul
+        // Dibujar Halo
+        if (showAccuracyHalo) {
+            paintHalo.alpha = haloAlpha
+            canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), haloRadius, paintHalo)
+        }
+
+        // Dibujar Punto Central y Borde
+        canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), baseInnerRadius, paintStroke)
+        canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), baseInnerRadius, paintInner)
     }
 }

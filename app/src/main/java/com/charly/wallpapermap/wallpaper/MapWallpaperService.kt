@@ -14,7 +14,6 @@ import com.charly.wallpapermap.location.LocationPredictor
 import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
-import kotlin.math.abs
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -29,13 +28,30 @@ class MapWallpaperService : WallpaperService() {
         private var isAnimating = false
         private var isMoving = false
 
-        // Render targets (Guardamos la última posición DIBUJADA)
+        // Render targets
         private var renderLat: Double = 0.0
         private var renderLon: Double = 0.0
 
         // Configuración de Rendimiento
         private var frameDelay: Long = 33L
         private val LERP_FACTOR = 0.1f
+
+        // OPTIMIZACIÓN OBLIGATORIA: Reutilización de objeto para cálculos de distancia
+        // Evita crear un FloatArray(1) cada vez que se desbloquea el cel.
+        private val distanceResults = FloatArray(1)
+
+        // --- DEBUG FPS (Opcional, podés borrarlo para prod) ---
+        private var debugLastTime = 0L
+        private var debugFrameCount = 0
+        private var debugActualFps = 0
+        private val fpsPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.GREEN
+            textSize = 60f
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+            setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -54,9 +70,8 @@ class MapWallpaperService : WallpaperService() {
         // --- BURST OPTIMIZADO ---
         private var burstFrames = 0
 
-        // Burst corto: Solo para cuando saltamos de lugar y necesitamos cargar tiles nuevos
         private fun startShortBurst() {
-            burstFrames = 3 // Bajamos de 6 a 3. Suficiente para cargar caché de disco.
+            burstFrames = 3
             drawBurstFrame()
         }
 
@@ -72,15 +87,10 @@ class MapWallpaperService : WallpaperService() {
             if (visible) {
                 updateSettings()
 
-                // --- LÓGICA INTELIGENTE DE RENDERIZADO ---
                 val lastKnown = LocationManager.lastKnownLocation()
 
                 if (shouldRedrawFull(lastKnown)) {
-                    // Caso A: Nos movimos lejos o es el inicio.
-                    // Hacemos un burst cortito para cargar tiles y acomodar.
                     Log.d("MapEngine", "🔄 Salto detectado o inicio. Burst activado.")
-
-                    // Actualizamos render targets inmediatamente para el snap
                     if (lastKnown != null) {
                         renderLat = lastKnown.latitude
                         renderLon = lastKnown.longitude
@@ -88,14 +98,10 @@ class MapWallpaperService : WallpaperService() {
                     }
                     startShortBurst()
                 } else {
-                    // Caso B: Estamos en el mismo lugar que antes.
-                    // Dibujamos 1 SOLO cuadro para restaurar la pantalla (buffer restore).
-                    // Osmdroid es eficiente: si los tiles ya están, drawFrame no gasta nada.
                     Log.d("MapEngine", "⏸️ Posición estable. Dibujado único (Eco Mode).")
                     drawFrame()
                 }
 
-                // Arrancamos el Manager
                 LocationManager.start { location ->
                     onLocationUpdate(location)
                 }
@@ -106,16 +112,14 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
-        // Verifica si la posición renderizada difiere de la real
         private fun shouldRedrawFull(location: Location?): Boolean {
-            if (location == null) return true // Nunca tuvimos ubicación, burst necesario
-            if (renderLat == 0.0 && renderLon == 0.0) return true // Primer arranque
+            if (location == null) return true
+            if (renderLat == 0.0 && renderLon == 0.0) return true
 
-            val results = FloatArray(1)
-            Location.distanceBetween(renderLat, renderLon, location.latitude, location.longitude, results)
-            val distance = results[0]
+            // OPTIMIZACIÓN: Usar variable de clase distanceResults
+            Location.distanceBetween(renderLat, renderLon, location.latitude, location.longitude, distanceResults)
+            val distance = distanceResults[0]
 
-            // Si nos movimos más de 2 metros con la pantalla apagada, justificamos un redraw
             return distance > 2.0f
         }
 
@@ -141,48 +145,19 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
-        // ... (El resto del código: renderRunnable, startAnimationLoop, stopAnimationLoop, drawFrame, onSharedPreferenceChanged, updateSettings, updateFpsConfig, onDestroy IGUAL QUE ANTES) ...
-
-        // Te copio drawFrame para referencia (mantené tu versión con el debug FPS si querés)
-        private fun drawFrame() {
-            val holder: SurfaceHolder = surfaceHolder
-            var canvas: Canvas? = null
-            try {
-                canvas = holder.lockCanvas()
-                if (canvas != null) {
-                    val mapView = renderer.mapView
-                    val width = canvas.width
-                    val height = canvas.height
-
-                    if (mapView.width != width || mapView.height != height) {
-                        val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-                        val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-                        mapView.measure(wSpec, hSpec)
-                        mapView.layout(0, 0, width, height)
-                    }
-                    mapView.draw(canvas)
-
-                    // ... Acá iría tu código de Debug FPS si lo tenés ...
-                }
-            } catch (e: Exception) {
-                Log.e("MapEngine", "Error drawing", e)
-            } finally {
-                canvas?.let { holder.unlockCanvasAndPost(it) }
-            }
-        }
-
-        // ...
-
-        // Métodos que faltaban en el snippet anterior para completar la clase:
         private val renderRunnable = object : Runnable {
             override fun run() {
                 if (!isVisible) return
+
                 val now = System.currentTimeMillis()
                 val (targetLat, targetLon) = LocationPredictor.predictLocation(now)
+
                 renderLat += (targetLat - renderLat) * LERP_FACTOR
                 renderLon += (targetLon - renderLon) * LERP_FACTOR
+
                 renderer.centerOn(renderLat, renderLon)
                 drawFrame()
+
                 if (isMoving) {
                     handler.postDelayed(this, frameDelay)
                 } else {
@@ -204,12 +179,51 @@ class MapWallpaperService : WallpaperService() {
             handler.removeCallbacks(renderRunnable)
         }
 
+        private fun drawFrame() {
+            val holder: SurfaceHolder = surfaceHolder
+            var canvas: Canvas? = null
+            try {
+                canvas = holder.lockCanvas()
+                if (canvas != null) {
+                    val mapView = renderer.mapView
+                    val width = canvas.width
+                    val height = canvas.height
+
+                    if (mapView.width != width || mapView.height != height) {
+                        val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+                        val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+                        mapView.measure(wSpec, hSpec)
+                        mapView.layout(0, 0, width, height)
+                    }
+                    mapView.draw(canvas)
+
+                    // --- DEBUG FPS ---
+                    val now = System.currentTimeMillis()
+                    debugFrameCount++
+                    if (now - debugLastTime >= 1000) {
+                        debugActualFps = debugFrameCount
+                        debugFrameCount = 0
+                        debugLastTime = now
+                    }
+                    if (debugActualFps > 0) {
+                        canvas.drawText("FPS: $debugActualFps", 50f, 200f, fpsPaint)
+                    }
+                    // ------------------
+                }
+            } catch (e: Exception) {
+                Log.e("MapEngine", "Error drawing", e)
+            } finally {
+                canvas?.let { holder.unlockCanvasAndPost(it) }
+            }
+        }
+
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
             if (key == SettingsManager.KEY_MAP_STYLE) renderer.applyStyle(SettingsManager.getMapStyle(applicationContext))
             if (key == SettingsManager.KEY_ZOOM) renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
             if (key == SettingsManager.KEY_MOTION_SENSOR) LocationManager.updateSettings(applicationContext)
             if (key == SettingsManager.KEY_SHOW_BLUE_DOT || key == SettingsManager.KEY_SHOW_ACCURACY) renderer.updateBlueDot()
             if (key == SettingsManager.KEY_TARGET_FPS) updateFpsConfig()
+
             if (isVisible) drawFrame()
         }
 
@@ -223,6 +237,7 @@ class MapWallpaperService : WallpaperService() {
         private fun updateFpsConfig() {
             val fps = SettingsManager.getTargetFps(applicationContext)
             frameDelay = (1000 / fps).toLong()
+            Log.d("MapEngine", "🚀 FPS Objetivo actualizado a: $fps (Delay: ${frameDelay}ms)")
         }
 
         override fun onDestroy() {
