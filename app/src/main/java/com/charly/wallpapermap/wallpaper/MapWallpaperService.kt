@@ -186,7 +186,7 @@ class MapWallpaperService : WallpaperService() {
                     // 2. Dibujar en pantalla (Esquina superior izquierda)
                     // Solo dibujamos si hay FPS calculados para no mostrar 0 al inicio
                     if (debugActualFps > 0) {
-                        canvas.drawText("FPS: $debugActualFps", 50f, 100f, fpsPaint)
+                        canvas.drawText("FPS: $debugActualFps", 50f, 200f, fpsPaint)
                     }
 
                     // ==============================
