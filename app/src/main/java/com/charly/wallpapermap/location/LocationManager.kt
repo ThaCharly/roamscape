@@ -368,7 +368,7 @@ object LocationManager : SensorEventListener {
 
         val bearingSource = if (isCalculated) "Calc" else "Raw"
 
-        Log.d(TAG, "📍 $source | " +
+        Log.d(TAG, "📍 $source [Hilo: ${Thread.currentThread().name}] | " +
                 "🌍 ${location.latitude}, ${location.longitude} | " +
                 "📏 Dist: ${"%.2f".format(dist)}m | " +
                 "🧭 GPS($bearingSource): ${"%.1f".format(originalGpsBearing)}° vs Sensor: ${"%.1f".format(currentCompassBearing)}° -> USED: ${"%.1f".format(location.bearing)}° | " +

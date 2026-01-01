@@ -131,6 +131,7 @@ class MapWallpaperService : WallpaperService() {
         }
 
         private fun onLocationUpdate(location: Location) {
+            Log.v("MapEngine", "🎨 Recibido en UI [Hilo: ${Thread.currentThread().name}]")
             LocationPredictor.update(location)
 
             if (!isVisible) {
