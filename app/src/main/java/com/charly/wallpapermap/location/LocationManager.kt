@@ -7,6 +7,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
+import android.location.LocationManager as AndroidLocationManager
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import com.charly.wallpapermap.settings.SettingsManager
@@ -14,7 +16,6 @@ import com.google.android.gms.location.*
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import android.Manifest
-import kotlin.math.abs
 import kotlin.math.sqrt
 
 object LocationManager : SensorEventListener {
@@ -38,6 +39,9 @@ object LocationManager : SensorEventListener {
     private var context: Context? = null
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var sensorManager: SensorManager? = null
+
+    // NUEVO: Hilo dedicado para el procesamiento de GPS
+    private var locationThread: HandlerThread? = null
 
     // Callbacks
     private var locationCallback: LocationCallback? = null
@@ -70,7 +74,7 @@ object LocationManager : SensorEventListener {
 
     private fun createLocationRequest(): LocationRequest =
         LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(0L)
+            .setMinUpdateIntervalMillis(500L) // Bajamos un poco para no saturar el hilo
             .setMaxUpdateDelayMillis(0L)
             .setWaitForAccurateLocation(false)
             .build()
@@ -87,6 +91,16 @@ object LocationManager : SensorEventListener {
             return
         }
 
+        // --- PUNTO 1: El Misterio del Caché y el GPS Apagado ---
+        val androidLocManager = ctx.getSystemService(Context.LOCATION_SERVICE) as AndroidLocationManager
+        val isGpsEnabled = androidLocManager.isProviderEnabled(AndroidLocationManager.GPS_PROVIDER) ||
+                androidLocManager.isProviderEnabled(AndroidLocationManager.NETWORK_PROVIDER)
+
+        if (!isGpsEnabled) {
+            Log.w(TAG, "🚫 Ubicación desactivada por usuario. Cache inaccesible.")
+        }
+        // --------------------------------------------------------
+
         isStarted = true
         isGpsPaused = false
         isInSoftSleep = false
@@ -101,22 +115,31 @@ object LocationManager : SensorEventListener {
         useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
         lastMovementTimestamp = System.currentTimeMillis()
 
-        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-            if (location != null) {
-                val originalBearing = location.bearing
-                if (location.speed < 1.5f && hasCompass && currentCompassBearing != 0f) {
-                    location.bearing = currentCompassBearing
+        // --- PUNTO 2: Gestión de Hilos (Inicio) ---
+        locationThread = HandlerThread("RoamScapeLocationThread").apply { start() }
+        // ------------------------------------------
+
+        // Solo pedimos caché si el sistema lo permite
+        if (isGpsEnabled) {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+                if (location != null) {
+                    val originalBearing = if (location.hasBearing()) location.bearing else 0f
+                    if (location.speed < 1.5f && hasCompass && currentCompassBearing != 0f) {
+                        location.bearing = currentCompassBearing
+                    }
+                    processValidLocation(location, "💾 CACHE", originalBearing)
+                } else {
+                    Log.d(TAG, "🤷‍♂️ Caché vacío. Esperando GPS...")
                 }
-                processValidLocation(location, "💾 CACHE", originalBearing)
-            } else {
-                Log.d(TAG, "🤷‍♂️ Caché vacío. Esperando GPS...")
+            }.addOnFailureListener {
+                Log.e(TAG, "❌ Error accediendo al caché: ${it.message}")
             }
         }
 
         startGpsUpdates()
         startSensors()
 
-        Log.d(TAG, "🚀 LocationManager iniciado. SensorMovimiento: $useMotionSensorFeature")
+        Log.d(TAG, "🚀 LocationManager iniciado en hilo dedicado.")
     }
 
     fun updateSettings(ctx: Context) {
@@ -142,6 +165,9 @@ object LocationManager : SensorEventListener {
     @SuppressLint("MissingPermission")
     private fun startGpsUpdates() {
         if (locationCallback != null) return
+
+        // --- PUNTO 2: Gestión de Hilos (Uso) ---
+        val threadLooper = locationThread?.looper ?: return
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -172,7 +198,8 @@ object LocationManager : SensorEventListener {
                 filterAndProcess(rawLocation)
             }
         }
-        fusedLocationClient.requestLocationUpdates(createLocationRequest(), locationCallback!!, Looper.getMainLooper())
+
+        fusedLocationClient.requestLocationUpdates(createLocationRequest(), locationCallback!!, threadLooper)
     }
 
     private fun stopGpsUpdates() {
@@ -246,9 +273,19 @@ object LocationManager : SensorEventListener {
     private var useCompassMode = true
 
     private fun filterAndProcess(rawLocation: Location) {
-        val originalGpsBearing = rawLocation.bearing
+        var originalGpsBearing = rawLocation.bearing
+        var isBearingCalculated = false
 
-        // Histéresis de rumbo
+        if (!rawLocation.hasBearing() && lastValidLocation != null) {
+            val distCheck = lastValidLocation!!.distanceTo(rawLocation)
+            if (distCheck > 0.5f) {
+                originalGpsBearing = lastValidLocation!!.bearingTo(rawLocation)
+                if (originalGpsBearing < 0) originalGpsBearing += 360f
+                isBearingCalculated = true
+                rawLocation.bearing = originalGpsBearing
+            }
+        }
+
         if (useCompassMode && rawLocation.speed > 2.0f) {
             useCompassMode = false
         } else if (!useCompassMode && rawLocation.speed < 1.0f) {
@@ -263,38 +300,29 @@ object LocationManager : SensorEventListener {
         val isNoiseSpeed = rawLocation.speed < NOISE_SPEED_THRESHOLD
         val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
 
-        // --- DETECCIÓN DE FRENADO ---
-        // Si veníamos moviéndonos y ahora detectamos ruido (velocidad 0),
-        // TENEMOS que dejar pasar este evento para que la UI sepa que paramos.
         val wasMoving = (lastValidLocation?.speed ?: 0f) > NOISE_SPEED_THRESHOLD
         val isJustStopping = wasMoving && isNoiseSpeed
 
         if (isNoiseSpeed && !isSignificantDistance && !isJustStopping) {
-            // ES RUIDO y ya estábamos quietos. Lo ignoramos.
             if (gpsMotionConfidence > 0) gpsMotionConfidence--
             ignoredFixesCount++
             if (ignoredFixesCount > MAX_IGNORED_FIXES) {
                 if (!isInSoftSleep) {
-                    processValidLocation(rawLocation, "⏰ FORZADO", originalGpsBearing)
+                    processValidLocation(rawLocation, "⏰ FORZADO", originalGpsBearing, isBearingCalculated)
                 }
             } else {
-                // RESTAURADO: El log para ver que estamos descartando basura
-                Log.v(TAG, "🗑️ Ruido ($ignoredFixesCount) | Vel: ${"%.2f".format(rawLocation.speed)} | ConfianzaGPS: $gpsMotionConfidence")
+                Log.v(TAG, "🗑️ Ruido ($ignoredFixesCount) | Vel: ${"%.2f".format(rawLocation.speed)} | Confianza: $gpsMotionConfidence")
             }
             return
         }
 
-        // Si es un frenado ("Just Stopping"), hacemos trampa:
-        // Mandamos la velocidad 0 (para cortar FPS) pero la posición vieja (para que no salte el mapa).
         if (isJustStopping) {
             lastValidLocation?.let { last ->
                 rawLocation.latitude = last.latitude
                 rawLocation.longitude = last.longitude
-                // Opcional: rawLocation.bearing = last.bearing (si querés congelar rotación también)
             }
         }
 
-        // ... Resto del buffer de confianza ...
         if (gpsMotionConfidence < GPS_MOTION_CONFIDENCE_THRESHOLD) {
             gpsMotionConfidence++
         }
@@ -317,10 +345,11 @@ object LocationManager : SensorEventListener {
         }
 
         val tag = if (isJustStopping) "🛑 STOP" else "✅ VALID"
-        processValidLocation(rawLocation, tag, originalGpsBearing)
+        processValidLocation(rawLocation, tag, originalGpsBearing, isBearingCalculated)
     }
 
-    private fun processValidLocation(location: Location, source: String, originalGpsBearing: Float) {
+    // --- REFORMATEADO: Volvimos al log detallado original + soporte isCalculated ---
+    private fun processValidLocation(location: Location, source: String, originalGpsBearing: Float, isCalculated: Boolean = false) {
         var accel = 0.0
         var dist = 0f
 
@@ -337,10 +366,12 @@ object LocationManager : SensorEventListener {
 
         listener?.invoke(location)
 
+        val bearingSource = if (isCalculated) "Calc" else "Raw"
+
         Log.d(TAG, "📍 $source | " +
                 "🌍 ${location.latitude}, ${location.longitude} | " +
                 "📏 Dist: ${"%.2f".format(dist)}m | " +
-                "🧭 GPS: ${"%.1f".format(originalGpsBearing)}° vs Sensor: ${"%.1f".format(currentCompassBearing)}° -> USED: ${"%.1f".format(location.bearing)}° | " +
+                "🧭 GPS($bearingSource): ${"%.1f".format(originalGpsBearing)}° vs Sensor: ${"%.1f".format(currentCompassBearing)}° -> USED: ${"%.1f".format(location.bearing)}° | " +
                 "💨 Vel: ${"%.2f".format(location.speed)}m/s | " +
                 "🚀 Acc: ${"%.2f".format(accel)}m/s²")
     }
@@ -351,7 +382,12 @@ object LocationManager : SensorEventListener {
         stopGpsUpdates()
         listener = null
         sensorManager?.unregisterListener(this)
-        Log.d(TAG, "🛑 LocationManager detenido (Todo apagado)")
+
+        // --- PUNTO 2: Limpieza de Hilos ---
+        locationThread?.quitSafely()
+        locationThread = null
+
+        Log.d(TAG, "🛑 LocationManager detenido.")
     }
 
     fun lastKnownLocation(): Location? = lastValidLocation

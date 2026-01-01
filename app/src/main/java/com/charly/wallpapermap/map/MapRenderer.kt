@@ -70,7 +70,8 @@ class MapRenderer(
         if (showDot) {
             // Si no existe, lo creamos y agregamos
             if (blueDotOverlay == null) {
-                blueDotOverlay = BlueDotOverlay(getLocation)
+                // ÚNICO CAMBIO: Le pasamos 'context' al constructor
+                blueDotOverlay = BlueDotOverlay(context, getLocation)
                 // Lo agregamos con índice para controlar el orden (encima del mapa, debajo de controles)
                 // Simplemente add lo pone al final (arriba de todo), que está bien.
                 mapView.overlays.add(blueDotOverlay)

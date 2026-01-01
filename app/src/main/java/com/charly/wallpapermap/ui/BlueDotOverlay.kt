@@ -1,5 +1,6 @@
 package com.charly.wallpapermap.ui
 
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Point
@@ -9,12 +10,26 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import kotlin.math.max
 
+// --- PUNTO 3: Escalado Correcto ---
+// Agregado 'context' al constructor para acceder a DisplayMetrics
 class BlueDotOverlay(
+    context: Context,
     private val getLocation: () -> Pair<Double, Double>?
 ) : Overlay() {
 
-    // OPTIMIZACIÓN OBLIGATORIA: Reutilizar el objeto Point para evitar basura en el GC
+    // Reciclamos objeto Point
     private val screenPoint = Point()
+
+    // Densidad para cálculos de DP
+    private val density = context.resources.displayMetrics.density
+
+    // Configuración Visual:
+    // Inner Radius: Fijo en DP (se ve igual en todas las pantallas y zooms)
+    private val baseInnerRadius = 6f * density // ~6dp
+    private val strokeWidth = 2f * density     // ~2dp
+
+    // Halo Mínimo: Un tamaño mínimo en DP para que no desaparezca si el GPS es muy preciso
+    private val minHaloRadius = 15f * density
 
     private val paintInner = Paint().apply {
         color = 0xFF4285F4.toInt() // Azul Material Google
@@ -25,7 +40,7 @@ class BlueDotOverlay(
     private val paintStroke = Paint().apply {
         color = 0xFFFFFFFF.toInt() // Borde Blanco
         style = Paint.Style.STROKE
-        strokeWidth = 4f
+        strokeWidth = this@BlueDotOverlay.strokeWidth
         isAntiAlias = true
     }
 
@@ -35,9 +50,6 @@ class BlueDotOverlay(
         isAntiAlias = true
     }
 
-    private val baseInnerRadius = 20f
-    private val baseHaloRadius = 60f
-
     var showAccuracyHalo = true
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -46,29 +58,30 @@ class BlueDotOverlay(
         val loc = getLocation() ?: return
         val geoPoint = GeoPoint(loc.first, loc.second)
 
-        // OPTIMIZACIÓN: Usamos el objeto existente en lugar de crear uno nuevo
         mapView.projection.toPixels(geoPoint, screenPoint)
 
-        var haloRadius = baseHaloRadius
+        var haloRadiusPixels = minHaloRadius
         var haloAlpha = 60
 
         if (showAccuracyHalo) {
             val accuracyMeters = LocationPredictor.getLastAccuracy()
             if (accuracyMeters > 0) {
-                val metersToPixels = mapView.projection.metersToPixels(accuracyMeters)
-                haloRadius = max(baseHaloRadius, metersToPixels)
+                // --- PUNTO 3: Halo en METROS ---
+                // Convertimos la precisión real (metros) a píxeles en el zoom actual
+                val accuracyInPixels = mapView.projection.metersToPixels(accuracyMeters)
 
-                if (haloRadius > baseHaloRadius) {
-                    val scaleFactor = baseHaloRadius / haloRadius
+                // Usamos el mayor entre la precisión real y el mínimo visual
+                haloRadiusPixels = max(minHaloRadius, accuracyInPixels)
+
+                if (haloRadiusPixels > minHaloRadius * 3) {
+                    val scaleFactor = minHaloRadius / haloRadiusPixels
                     haloAlpha = (60 * scaleFactor).toInt().coerceIn(10, 60)
                 }
             }
         }
 
-        // OPTIMIZACIÓN OBLIGATORIA: Clipping (Recorte)
-        // Si el punto (más su radio máximo) está fuera de la pantalla, no dibujamos nada.
-        // Esto ahorra mucho proceso de GPU cuando scrolleás lejos de tu ubicación.
-        val maxDrawRadius = if (showAccuracyHalo) haloRadius else baseInnerRadius + 4f
+        // Clipping: No dibujar si está fuera de pantalla
+        val maxDrawRadius = if (showAccuracyHalo) haloRadiusPixels else baseInnerRadius + 4f
         val width = canvas.width
         val height = canvas.height
 
@@ -80,10 +93,10 @@ class BlueDotOverlay(
         // Dibujar Halo
         if (showAccuracyHalo) {
             paintHalo.alpha = haloAlpha
-            canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), haloRadius, paintHalo)
+            canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), haloRadiusPixels, paintHalo)
         }
 
-        // Dibujar Punto Central y Borde
+        // Dibujar Punto Central (Usa el radio fijo en DP)
         canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), baseInnerRadius, paintStroke)
         canvas.drawCircle(screenPoint.x.toFloat(), screenPoint.y.toFloat(), baseInnerRadius, paintInner)
     }

@@ -6,7 +6,7 @@ import android.location.Location
 import android.os.Handler
 import android.os.Looper
 import android.service.wallpaper.WallpaperService
-import android.view.Choreographer
+import android.view.Choreographer // Importante para VSync
 import android.view.SurfaceHolder
 import android.view.View
 import androidx.preference.PreferenceManager
@@ -22,7 +22,7 @@ class MapWallpaperService : WallpaperService() {
 
     inner class MapEngine : Engine(), SharedPreferences.OnSharedPreferenceChangeListener {
         private val handler = Handler(Looper.getMainLooper())
-        private val choreographer = Choreographer.getInstance()
+        private val choreographer = Choreographer.getInstance() // Instancia de VSync
 
         private lateinit var renderer: MapRenderer
         private lateinit var prefs: SharedPreferences
@@ -43,7 +43,7 @@ class MapWallpaperService : WallpaperService() {
         // Configuración VSync vs FPS
         private var useVsync = false
         private var debugForceAnim = false
-        private var showFps = false // <--- NUEVA VARIABLE DE ESTADO
+        private var showFps = false
 
         private val distanceResults = FloatArray(1)
 
@@ -91,7 +91,7 @@ class MapWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             isVisible = visible
             if (visible) {
-                updateSettings()
+                updateSettings() // Recargar config al mostrar
 
                 val lastKnown = LocationManager.lastKnownLocation()
 
@@ -109,7 +109,12 @@ class MapWallpaperService : WallpaperService() {
                 }
 
                 LocationManager.start { location ->
-                    onLocationUpdate(location)
+                    // --- PUNTO 2: Gestión de Hilos (Sincronización) ---
+                    // Como el LocationManager ahora corre en un hilo separado,
+                    // debemos volver al hilo principal (handler) para tocar el Renderer.
+                    handler.post {
+                        onLocationUpdate(location)
+                    }
                 }
             } else {
                 LocationManager.stop()
@@ -234,7 +239,7 @@ class MapWallpaperService : WallpaperService() {
                     mapView.draw(canvas)
 
                     // --- DEBUG FPS CONDICIONAL ---
-                    if (showFps) { // <--- AHORA SOLO DIBUJA SI ESTÁ ACTIVO
+                    if (showFps) {
                         val now = System.currentTimeMillis()
                         debugFrameCount++
                         if (now - debugLastTime >= 1000) {
@@ -245,7 +250,7 @@ class MapWallpaperService : WallpaperService() {
                         if (debugActualFps > 0) {
                             val mode = if(useVsync) "VSYNC" else "LIMIT"
                             val renderType = if (canvas.isHardwareAccelerated) "GPU" else "CPU"
-                            canvas.drawText("FPS: $debugActualFps ($mode-$renderType)", 50f, 100f, fpsPaint)
+                            canvas.drawText("FPS: $debugActualFps ($mode-$renderType)", 50f, 200f, fpsPaint)
                         }
                     }
                 }
@@ -272,11 +277,10 @@ class MapWallpaperService : WallpaperService() {
             if (key == SettingsManager.KEY_TARGET_FPS ||
                 key == SettingsManager.KEY_VSYNC ||
                 key == SettingsManager.KEY_DEBUG_ANIM ||
-                key == SettingsManager.KEY_SHOW_FPS) { // <--- AGREGADO
+                key == SettingsManager.KEY_SHOW_FPS) {
 
                 updatePerformanceConfig()
 
-                // Si se activó "Forzar Animación" o "Show FPS" y no se estaba moviendo, forzamos un cuadro para que se vea el cambio
                 if (isVisible) drawFrame()
 
                 if (debugForceAnim && !isAnimating) {
@@ -301,7 +305,7 @@ class MapWallpaperService : WallpaperService() {
             val ctx = applicationContext
             useVsync = SettingsManager.isVsyncEnabled(ctx)
             debugForceAnim = SettingsManager.isDebugAnimEnabled(ctx)
-            showFps = SettingsManager.showFpsCounter(ctx) // <--- ACTUALIZAR VARIABLE
+            showFps = SettingsManager.showFpsCounter(ctx)
 
             val fps = SettingsManager.getTargetFps(ctx)
             frameDelay = (1000 / fps).toLong()
