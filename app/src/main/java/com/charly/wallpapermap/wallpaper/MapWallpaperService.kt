@@ -16,7 +16,6 @@ import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
 import kotlin.math.abs
-import kotlin.math.max // Importante para la corrección
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -46,15 +45,15 @@ class MapWallpaperService : WallpaperService() {
         private var debugForceAnim = false
         private var showFps = false
 
-        // OPTIMIZACIÓN: Objetos reutilizables (Zero-Allocation)
+        // OPTIMIZACIÓN: Arrays reutilizables para cálculo interno
         private val distanceResults = FloatArray(1)
         private val predictionResult = DoubleArray(2)
 
-        // --- DEBUG FPS OPTIMIZADO ---
+        // --- DEBUG FPS ---
         private var debugLastTime = 0L
         private var debugFrameCount = 0
         private var debugActualFps = 0
-        private var fpsTextCache = ""
+        private var fpsTextCache = "" // Cache de texto para no generar basura
 
         private val fpsPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.GREEN
@@ -70,7 +69,8 @@ class MapWallpaperService : WallpaperService() {
 
             LocationManager.init(applicationContext)
 
-            // Usamos tu implementación actual que funciona
+            // ARREGLO CRASH: Volvemos a pasarle un Pair al renderer como él espera.
+            // Usamos el array para calcular rápido, pero empaquetamos para compatibilidad.
             renderer = MapRenderer(applicationContext) {
                 LocationPredictor.predictLocation(System.currentTimeMillis(), predictionResult)
                 predictionResult[0] to predictionResult[1]
@@ -116,6 +116,7 @@ class MapWallpaperService : WallpaperService() {
                 }
 
                 LocationManager.start { location ->
+                    // Mantenemos la sincronización de hilos que funciona bien
                     handler.post {
                         onLocationUpdate(location)
                     }
@@ -180,23 +181,14 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
-        // --- CORRECCIÓN DE FPS AQUÍ ---
+        // --- VUELTA A LOS ORÍGENES: Simple Loop ---
         private val renderRunnable = object : Runnable {
             override fun run() {
-                // 1. Medimos cuándo empezamos
-                val startTime = System.nanoTime()
-
                 performRenderStep()
-
+                // Si seguimos animando y NO es VSync, usamos el delay calculado simple.
+                // Esta lógica es la que te funcionaba bien antes.
                 if (isAnimating && !useVsync) {
-                    // 2. Calculamos cuánto tardó el dibujado en ms
-                    val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
-
-                    // 3. Compensamos: Esperamos (Target - Tardado).
-                    // Si tardamos más que el target, esperamos 0 (lo antes posible).
-                    val waitTime = max(0L, frameDelay - elapsedMs)
-
-                    handler.postDelayed(this, waitTime)
+                    handler.postDelayed(this, frameDelay)
                 }
             }
         }
@@ -265,6 +257,7 @@ class MapWallpaperService : WallpaperService() {
 
                             val mode = if(useVsync) "VSYNC" else "LIMIT"
                             val renderType = if (canvas.isHardwareAccelerated) "GPU" else "CPU"
+                            // Cacheamos el String para no crearlo 120 veces por segundo
                             fpsTextCache = "FPS: $debugActualFps ($mode-$renderType)"
                         }
                         if (fpsTextCache.isNotEmpty()) {
