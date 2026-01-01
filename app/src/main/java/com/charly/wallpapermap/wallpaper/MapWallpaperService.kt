@@ -6,6 +6,7 @@ import android.location.Location
 import android.os.Handler
 import android.os.Looper
 import android.service.wallpaper.WallpaperService
+import android.view.Choreographer
 import android.view.SurfaceHolder
 import android.view.View
 import androidx.preference.PreferenceManager
@@ -14,12 +15,15 @@ import com.charly.wallpapermap.location.LocationPredictor
 import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
+import kotlin.math.abs
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
 
     inner class MapEngine : Engine(), SharedPreferences.OnSharedPreferenceChangeListener {
         private val handler = Handler(Looper.getMainLooper())
+        private val choreographer = Choreographer.getInstance()
+
         private lateinit var renderer: MapRenderer
         private lateinit var prefs: SharedPreferences
 
@@ -36,11 +40,14 @@ class MapWallpaperService : WallpaperService() {
         private var frameDelay: Long = 33L
         private val LERP_FACTOR = 0.1f
 
-        // OPTIMIZACIÓN OBLIGATORIA: Reutilización de objeto para cálculos de distancia
-        // Evita crear un FloatArray(1) cada vez que se desbloquea el cel.
+        // Configuración VSync vs FPS
+        private var useVsync = false
+        private var debugForceAnim = false
+        private var showFps = false // <--- NUEVA VARIABLE DE ESTADO
+
         private val distanceResults = FloatArray(1)
 
-        // --- DEBUG FPS (Opcional, podés borrarlo para prod) ---
+        // --- DEBUG FPS ---
         private var debugLastTime = 0L
         private var debugFrameCount = 0
         private var debugActualFps = 0
@@ -67,7 +74,6 @@ class MapWallpaperService : WallpaperService() {
             updateSettings()
         }
 
-        // --- BURST OPTIMIZADO ---
         private var burstFrames = 0
 
         private fun startShortBurst() {
@@ -115,16 +121,16 @@ class MapWallpaperService : WallpaperService() {
         private fun shouldRedrawFull(location: Location?): Boolean {
             if (location == null) return true
             if (renderLat == 0.0 && renderLon == 0.0) return true
-
-            // OPTIMIZACIÓN: Usar variable de clase distanceResults
             Location.distanceBetween(renderLat, renderLon, location.latitude, location.longitude, distanceResults)
-            val distance = distanceResults[0]
-
-            return distance > 2.0f
+            return distanceResults[0] > 2.0f
         }
 
         private fun onLocationUpdate(location: Location) {
             LocationPredictor.update(location)
+
+            if (!isVisible) {
+                return
+            }
 
             if (renderLat == 0.0 && renderLon == 0.0) {
                 renderLat = location.latitude
@@ -145,23 +151,39 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
+        private fun performRenderStep() {
+            if (!isVisible) return
+
+            val now = System.currentTimeMillis()
+            val (targetLat, targetLon) = LocationPredictor.predictLocation(now)
+
+            renderLat += (targetLat - renderLat) * LERP_FACTOR
+            renderLon += (targetLon - renderLon) * LERP_FACTOR
+
+            renderer.centerOn(renderLat, renderLon)
+            drawFrame()
+
+            val shouldKeepAnimating = isMoving || debugForceAnim
+
+            if (!shouldKeepAnimating) {
+                isAnimating = false
+            }
+        }
+
         private val renderRunnable = object : Runnable {
             override fun run() {
-                if (!isVisible) return
-
-                val now = System.currentTimeMillis()
-                val (targetLat, targetLon) = LocationPredictor.predictLocation(now)
-
-                renderLat += (targetLat - renderLat) * LERP_FACTOR
-                renderLon += (targetLon - renderLon) * LERP_FACTOR
-
-                renderer.centerOn(renderLat, renderLon)
-                drawFrame()
-
-                if (isMoving) {
+                performRenderStep()
+                if (isAnimating && !useVsync) {
                     handler.postDelayed(this, frameDelay)
-                } else {
-                    isAnimating = false
+                }
+            }
+        }
+
+        private val vsyncCallback = object : Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                performRenderStep()
+                if (isAnimating && useVsync) {
+                    choreographer.postFrameCallback(this)
                 }
             }
         }
@@ -170,20 +192,34 @@ class MapWallpaperService : WallpaperService() {
             if (!isAnimating) {
                 isAnimating = true
                 handler.removeCallbacks(renderRunnable)
-                handler.post(renderRunnable)
+                choreographer.removeFrameCallback(vsyncCallback)
+
+                if (useVsync) {
+                    Log.d("MapEngine", "🚀 Iniciando Loop VSync (Choreographer)")
+                    choreographer.postFrameCallback(vsyncCallback)
+                } else {
+                    Log.d("MapEngine", "🚂 Iniciando Loop FPS Limitado (Handler: ${1000/frameDelay} fps)")
+                    handler.post(renderRunnable)
+                }
             }
         }
 
         private fun stopAnimationLoop() {
             isAnimating = false
             handler.removeCallbacks(renderRunnable)
+            choreographer.removeFrameCallback(vsyncCallback)
         }
 
         private fun drawFrame() {
             val holder: SurfaceHolder = surfaceHolder
             var canvas: Canvas? = null
             try {
-                canvas = holder.lockCanvas()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    canvas = holder.lockHardwareCanvas()
+                } else {
+                    canvas = holder.lockCanvas()
+                }
+
                 if (canvas != null) {
                     val mapView = renderer.mapView
                     val width = canvas.width
@@ -197,23 +233,32 @@ class MapWallpaperService : WallpaperService() {
                     }
                     mapView.draw(canvas)
 
-                    // --- DEBUG FPS ---
-                    val now = System.currentTimeMillis()
-                    debugFrameCount++
-                    if (now - debugLastTime >= 1000) {
-                        debugActualFps = debugFrameCount
-                        debugFrameCount = 0
-                        debugLastTime = now
+                    // --- DEBUG FPS CONDICIONAL ---
+                    if (showFps) { // <--- AHORA SOLO DIBUJA SI ESTÁ ACTIVO
+                        val now = System.currentTimeMillis()
+                        debugFrameCount++
+                        if (now - debugLastTime >= 1000) {
+                            debugActualFps = debugFrameCount
+                            debugFrameCount = 0
+                            debugLastTime = now
+                        }
+                        if (debugActualFps > 0) {
+                            val mode = if(useVsync) "VSYNC" else "LIMIT"
+                            val renderType = if (canvas.isHardwareAccelerated) "GPU" else "CPU"
+                            canvas.drawText("FPS: $debugActualFps ($mode-$renderType)", 50f, 100f, fpsPaint)
+                        }
                     }
-                    if (debugActualFps > 0) {
-                        canvas.drawText("FPS: $debugActualFps", 50f, 200f, fpsPaint)
-                    }
-                    // ------------------
                 }
             } catch (e: Exception) {
-                Log.e("MapEngine", "Error drawing", e)
+                Log.e("MapEngine", "Error drawing frame", e)
             } finally {
-                canvas?.let { holder.unlockCanvasAndPost(it) }
+                canvas?.let {
+                    try {
+                        holder.unlockCanvasAndPost(it)
+                    } catch (e: Exception) {
+                        Log.e("MapEngine", "Error unlocking canvas", e)
+                    }
+                }
             }
         }
 
@@ -222,7 +267,25 @@ class MapWallpaperService : WallpaperService() {
             if (key == SettingsManager.KEY_ZOOM) renderer.setZoom(SettingsManager.getMapZoom(applicationContext).toFloat())
             if (key == SettingsManager.KEY_MOTION_SENSOR) LocationManager.updateSettings(applicationContext)
             if (key == SettingsManager.KEY_SHOW_BLUE_DOT || key == SettingsManager.KEY_SHOW_ACCURACY) renderer.updateBlueDot()
-            if (key == SettingsManager.KEY_TARGET_FPS) updateFpsConfig()
+
+            // Hot Reload de VSync, FPS, DEBUG y ShowFPS
+            if (key == SettingsManager.KEY_TARGET_FPS ||
+                key == SettingsManager.KEY_VSYNC ||
+                key == SettingsManager.KEY_DEBUG_ANIM ||
+                key == SettingsManager.KEY_SHOW_FPS) { // <--- AGREGADO
+
+                updatePerformanceConfig()
+
+                // Si se activó "Forzar Animación" o "Show FPS" y no se estaba moviendo, forzamos un cuadro para que se vea el cambio
+                if (isVisible) drawFrame()
+
+                if (debugForceAnim && !isAnimating) {
+                    startAnimationLoop()
+                } else if (isAnimating) {
+                    stopAnimationLoop()
+                    startAnimationLoop()
+                }
+            }
 
             if (isVisible) drawFrame()
         }
@@ -231,13 +294,19 @@ class MapWallpaperService : WallpaperService() {
             val ctx = applicationContext
             renderer.applyStyle(SettingsManager.getMapStyle(ctx))
             renderer.setZoom(SettingsManager.getMapZoom(ctx).toFloat())
-            updateFpsConfig()
+            updatePerformanceConfig()
         }
 
-        private fun updateFpsConfig() {
-            val fps = SettingsManager.getTargetFps(applicationContext)
+        private fun updatePerformanceConfig() {
+            val ctx = applicationContext
+            useVsync = SettingsManager.isVsyncEnabled(ctx)
+            debugForceAnim = SettingsManager.isDebugAnimEnabled(ctx)
+            showFps = SettingsManager.showFpsCounter(ctx) // <--- ACTUALIZAR VARIABLE
+
+            val fps = SettingsManager.getTargetFps(ctx)
             frameDelay = (1000 / fps).toLong()
-            Log.d("MapEngine", "🚀 FPS Objetivo actualizado a: $fps (Delay: ${frameDelay}ms)")
+
+            Log.d("MapEngine", "⚙️ Config: VSync=$useVsync | FPS=$fps | ForceLoop=$debugForceAnim | ShowFPS=$showFps")
         }
 
         override fun onDestroy() {

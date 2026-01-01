@@ -63,9 +63,15 @@
     app:iconSpaceReserved="true" />
 
 <PreferenceCategory app:title="Rendimiento">
+
+        <CheckBoxPreference
+            app:defaultValue="false"
+            app:key="enable_vsync"
+            app:title="Activar VSync (Experimental)"
+            app:summary="Sincroniza con la pantalla. Ignora el límite de FPS. Máxima fluidez." />
         
         <ListPreference
-            app:defaultValue="48"
+            app:defaultValue="24"
             app:entries="@array/fps_names"
             app:entryValues="@array/fps_values"
             app:key="target_fps"
@@ -77,6 +83,21 @@
             app:key="motion_sensor"
             app:title="Usar sensor de movimiento"
             app:summary="Pausa el GPS cuando el teléfono no se mueve físicamente (Ahorra batería)" />
+
+            <CheckBoxPreference
+            app:defaultValue="false"
+            app:key="debug_force_anim"
+            app:title="[DEBUG] Loop Infinito"
+            app:summary="Fuerza el renderizado constante aunque estés quieto. Usar solo para tests." 
+             /> 
+
+             <CheckBoxPreference
+            app:defaultValue="false"
+            app:key="show_fps_counter"
+            app:title="Mostrar contador de FPS"
+            app:summary="Dibuja el rendimiento en tiempo real en la pantalla"
+            app:icon="@drawable/ic_speed" />
+            
             
     </PreferenceCategory>
 

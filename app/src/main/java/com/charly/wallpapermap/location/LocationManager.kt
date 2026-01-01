@@ -95,7 +95,7 @@ object LocationManager : SensorEventListener {
         lastValidLocation = null
         ignoredFixesCount = 0
 
-        // OPTIMIZACIÓN: Resetear estado del modo brújula al iniciar
+        // Resetear estado del modo brújula al iniciar
         useCompassMode = true
 
         useMotionSensorFeature = SettingsManager.isMotionSensorEnabled(ctx)
@@ -119,17 +119,14 @@ object LocationManager : SensorEventListener {
         Log.d(TAG, "🚀 LocationManager iniciado. SensorMovimiento: $useMotionSensorFeature")
     }
 
-    // Método para actualización en caliente de configuración
     fun updateSettings(ctx: Context) {
         val newState = SettingsManager.isMotionSensorEnabled(ctx)
         if (newState != useMotionSensorFeature) {
             useMotionSensorFeature = newState
 
-            // Re-evaluar sensores si cambió la config
             sensorManager?.unregisterListener(this)
             startSensors()
 
-            // Si lo apagaron, despertar todo
             if (!useMotionSensorFeature) {
                 lastMovementTimestamp = System.currentTimeMillis()
                 if (isGpsPaused) {
@@ -185,8 +182,6 @@ object LocationManager : SensorEventListener {
 
     private fun startSensors() {
         sensorManager?.let { sm ->
-            // OPTIMIZACIÓN OBLIGATORIA: Usar SENSOR_DELAY_NORMAL (200ms) en lugar de UI (60ms)
-            // Ahorra batería y CPU. La interpolación hace que se vea suave igual.
             val rotationSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
                 ?: sm.getDefaultSensor(Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR)
 
@@ -210,7 +205,6 @@ object LocationManager : SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         val e = event ?: return
 
-        // --- A. BRÚJULA ---
         if (e.sensor.type == Sensor.TYPE_ROTATION_VECTOR ||
             e.sensor.type == Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR) {
 
@@ -222,7 +216,6 @@ object LocationManager : SensorEventListener {
             currentCompassBearing = currentCompassBearing * 0.9f + azimuth * 0.1f
         }
 
-        // --- B. DETECCIÓN DE MOVIMIENTO ---
         if (useMotionSensorFeature &&
             (e.sensor.type == Sensor.TYPE_LINEAR_ACCELERATION || e.sensor.type == Sensor.TYPE_ACCELEROMETER)) {
 
@@ -255,6 +248,7 @@ object LocationManager : SensorEventListener {
     private fun filterAndProcess(rawLocation: Location) {
         val originalGpsBearing = rawLocation.bearing
 
+        // Histéresis de rumbo
         if (useCompassMode && rawLocation.speed > 2.0f) {
             useCompassMode = false
         } else if (!useCompassMode && rawLocation.speed < 1.0f) {
@@ -269,17 +263,38 @@ object LocationManager : SensorEventListener {
         val isNoiseSpeed = rawLocation.speed < NOISE_SPEED_THRESHOLD
         val isSignificantDistance = dist >= SIGNIFICANT_DISTANCE
 
-        if (isNoiseSpeed && !isSignificantDistance) {
+        // --- DETECCIÓN DE FRENADO ---
+        // Si veníamos moviéndonos y ahora detectamos ruido (velocidad 0),
+        // TENEMOS que dejar pasar este evento para que la UI sepa que paramos.
+        val wasMoving = (lastValidLocation?.speed ?: 0f) > NOISE_SPEED_THRESHOLD
+        val isJustStopping = wasMoving && isNoiseSpeed
+
+        if (isNoiseSpeed && !isSignificantDistance && !isJustStopping) {
+            // ES RUIDO y ya estábamos quietos. Lo ignoramos.
             if (gpsMotionConfidence > 0) gpsMotionConfidence--
             ignoredFixesCount++
             if (ignoredFixesCount > MAX_IGNORED_FIXES) {
                 if (!isInSoftSleep) {
                     processValidLocation(rawLocation, "⏰ FORZADO", originalGpsBearing)
                 }
+            } else {
+                // RESTAURADO: El log para ver que estamos descartando basura
+                Log.v(TAG, "🗑️ Ruido ($ignoredFixesCount) | Vel: ${"%.2f".format(rawLocation.speed)} | ConfianzaGPS: $gpsMotionConfidence")
             }
             return
         }
 
+        // Si es un frenado ("Just Stopping"), hacemos trampa:
+        // Mandamos la velocidad 0 (para cortar FPS) pero la posición vieja (para que no salte el mapa).
+        if (isJustStopping) {
+            lastValidLocation?.let { last ->
+                rawLocation.latitude = last.latitude
+                rawLocation.longitude = last.longitude
+                // Opcional: rawLocation.bearing = last.bearing (si querés congelar rotación también)
+            }
+        }
+
+        // ... Resto del buffer de confianza ...
         if (gpsMotionConfidence < GPS_MOTION_CONFIDENCE_THRESHOLD) {
             gpsMotionConfidence++
         }
@@ -301,7 +316,8 @@ object LocationManager : SensorEventListener {
             return
         }
 
-        processValidLocation(rawLocation, "✅ VALID", originalGpsBearing)
+        val tag = if (isJustStopping) "🛑 STOP" else "✅ VALID"
+        processValidLocation(rawLocation, tag, originalGpsBearing)
     }
 
     private fun processValidLocation(location: Location, source: String, originalGpsBearing: Float) {

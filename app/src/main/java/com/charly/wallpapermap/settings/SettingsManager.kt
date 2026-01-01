@@ -8,9 +8,12 @@ object SettingsManager {
     const val KEY_ZOOM = "map_zoom"
     const val KEY_SHOW_BLUE_DOT = "show_blue_dot"
     const val KEY_MOTION_SENSOR = "motion_sensor"
-    // Nueva Key
     const val KEY_SHOW_ACCURACY = "show_accuracy_halo"
     const val KEY_TARGET_FPS = "target_fps"
+    // NUEVO
+    const val KEY_VSYNC = "enable_vsync"
+    const val KEY_DEBUG_ANIM = "debug_force_anim"
+    const val KEY_SHOW_FPS = "show_fps_counter"
 
     fun ensureDefaults(context: Context) {
         PreferenceManager.setDefaultValues(context, com.charly.wallpapermap.R.xml.preferences, false)
@@ -25,7 +28,6 @@ object SettingsManager {
     fun showBlueDot(context: Context): Boolean =
         PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_SHOW_BLUE_DOT, true)
 
-    // Nuevo Getter
     fun showAccuracyHalo(context: Context): Boolean =
         PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_SHOW_ACCURACY, true)
 
@@ -34,7 +36,16 @@ object SettingsManager {
 
     fun getTargetFps(context: Context): Int {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        // ListPreference guarda strings, así que parseamos a Int. Default 48.
         return prefs.getString(KEY_TARGET_FPS, "48")?.toIntOrNull() ?: 48
     }
+
+    // NUEVO: Getter de VSync
+    fun isVsyncEnabled(context: Context): Boolean =
+        PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_VSYNC, false)
+
+    fun isDebugAnimEnabled(context: Context): Boolean =
+        PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_DEBUG_ANIM, false)
+
+    fun showFpsCounter(context: Context): Boolean =
+        PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_SHOW_FPS, false)
 }
