@@ -16,6 +16,7 @@ import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
 import kotlin.math.abs
+import kotlin.math.max // Importante para la corrección
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -47,13 +48,13 @@ class MapWallpaperService : WallpaperService() {
 
         // OPTIMIZACIÓN: Objetos reutilizables (Zero-Allocation)
         private val distanceResults = FloatArray(1)
-        private val predictionResult = DoubleArray(2) // Para recibir lat/lon sin crear objetos Pair
+        private val predictionResult = DoubleArray(2)
 
         // --- DEBUG FPS OPTIMIZADO ---
         private var debugLastTime = 0L
         private var debugFrameCount = 0
         private var debugActualFps = 0
-        private var fpsTextCache = "" // Cacheamos el String para no crearlo en cada frame
+        private var fpsTextCache = ""
 
         private val fpsPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.GREEN
@@ -69,13 +70,8 @@ class MapWallpaperService : WallpaperService() {
 
             LocationManager.init(applicationContext)
 
-            // El renderer usa el predictor, pero ahora pasamos una lambda que maneja el array internamente si hiciera falta,
-            // pero OJO: el MapRenderer usa este callback para el BlueDot.
-            // Para mantener compatibilidad con BlueDotOverlay que espera () -> Pair, hacemos un wrapper temporal
-            // o mejor, optimizamos BlueDot después. Por ahora, dejamos que cree un Pair SOLO para el BlueDot (es menos crítico)
-            // pero el LOOP principal de animación NO usará esto.
+            // Usamos tu implementación actual que funciona
             renderer = MapRenderer(applicationContext) {
-                // Este callback es para el BlueDotOverlay
                 LocationPredictor.predictLocation(System.currentTimeMillis(), predictionResult)
                 predictionResult[0] to predictionResult[1]
             }
@@ -139,7 +135,6 @@ class MapWallpaperService : WallpaperService() {
         }
 
         private fun onLocationUpdate(location: Location) {
-            // Log.v("MapEngine", "🎨 Recibido en UI [Hilo: ${Thread.currentThread().name}]") // Comentado para no spammear
             LocationPredictor.update(location)
 
             if (!isVisible) return
@@ -157,7 +152,6 @@ class MapWallpaperService : WallpaperService() {
             }
 
             if (!isMoving) {
-                // Usamos el array reutilizable
                 LocationPredictor.predictLocation(System.currentTimeMillis(), predictionResult)
                 renderer.centerOn(predictionResult[0], predictionResult[1])
                 drawFrame()
@@ -169,7 +163,6 @@ class MapWallpaperService : WallpaperService() {
 
             val now = System.currentTimeMillis()
 
-            // OPTIMIZACIÓN: Usar Array reutilizable en lugar de Pair
             LocationPredictor.predictLocation(now, predictionResult)
             val targetLat = predictionResult[0]
             val targetLon = predictionResult[1]
@@ -187,23 +180,32 @@ class MapWallpaperService : WallpaperService() {
             }
         }
 
+        // --- CORRECCIÓN DE FPS AQUÍ ---
         private val renderRunnable = object : Runnable {
             override fun run() {
+                // 1. Medimos cuándo empezamos
+                val startTime = System.nanoTime()
+
                 performRenderStep()
+
                 if (isAnimating && !useVsync) {
-                    handler.postDelayed(this, frameDelay)
+                    // 2. Calculamos cuánto tardó el dibujado en ms
+                    val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
+
+                    // 3. Compensamos: Esperamos (Target - Tardado).
+                    // Si tardamos más que el target, esperamos 0 (lo antes posible).
+                    val waitTime = max(0L, frameDelay - elapsedMs)
+
+                    handler.postDelayed(this, waitTime)
                 }
             }
         }
 
         private val vsyncCallback = object : Choreographer.FrameCallback {
             override fun doFrame(frameTimeNanos: Long) {
-                // OPTIMIZACIÓN CRÍTICA: Pedir el siguiente frame ANTES de procesar el actual.
-                // Esto asegura que no perdamos la ventana de tiempo del VSync si el dibujo tarda un poco.
                 if (isAnimating && useVsync) {
                     choreographer.postFrameCallback(this)
                 }
-
                 performRenderStep()
             }
         }
@@ -241,8 +243,6 @@ class MapWallpaperService : WallpaperService() {
                 }
 
                 if (canvas != null) {
-                    // Nota: Measure/Layout es costoso, idealmente solo hacerlo si cambia el tamaño.
-                    // Asumimos que la vista ya tiene el tamaño correcto.
                     val mapView = renderer.mapView
                     val width = canvas.width
                     val height = canvas.height
@@ -263,12 +263,10 @@ class MapWallpaperService : WallpaperService() {
                             debugFrameCount = 0
                             debugLastTime = now
 
-                            // OPTIMIZACIÓN: Crear el String solo 1 vez por segundo
                             val mode = if(useVsync) "VSYNC" else "LIMIT"
                             val renderType = if (canvas.isHardwareAccelerated) "GPU" else "CPU"
                             fpsTextCache = "FPS: $debugActualFps ($mode-$renderType)"
                         }
-                        // Dibujar el texto cacheado
                         if (fpsTextCache.isNotEmpty()) {
                             canvas.drawText(fpsTextCache, 50f, 200f, fpsPaint)
                         }
