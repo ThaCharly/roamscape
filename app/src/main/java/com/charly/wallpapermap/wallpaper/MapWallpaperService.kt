@@ -70,6 +70,7 @@ class MapWallpaperService : WallpaperService() {
 
             LocationManager.init(applicationContext)
 
+
             // ARREGLO CRASH: Volvemos a pasarle un Pair al renderer como él espera.
             // Usamos el array para calcular rápido, pero empaquetamos para compatibilidad.
             renderer = MapRenderer(applicationContext) {
@@ -80,6 +81,8 @@ class MapWallpaperService : WallpaperService() {
             prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
             prefs.registerOnSharedPreferenceChangeListener(this)
             updateSettings()
+
+
         }
 
         private var burstFrames = 0

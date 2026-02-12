@@ -27,5 +27,7 @@ class WallpaperMapApp : Application() {
         // 🔒 Guardamos config de osmdroid
         val osmPrefs = ctx.getSharedPreferences("osmdroid", MODE_PRIVATE)
         cfg.save(ctx, osmPrefs)
+
+        com.charly.wallpapermap.map.decode.TileDecodeWorkers.start(this)
     }
 }

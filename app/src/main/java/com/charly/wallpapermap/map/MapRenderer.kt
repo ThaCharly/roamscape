@@ -26,6 +26,7 @@ class MapRenderer(
 
         applyStyle(SettingsManager.getMapStyle(context))
         setZoom(SettingsManager.getMapZoom(context).toFloat())
+        com.charly.wallpapermap.map.decode.TileDecodeWorkers.setMapView(mapView)
 
         // Inicializar configuración del punto azul
         updateBlueDot()
@@ -49,6 +50,7 @@ class MapRenderer(
         val newTileSource = TileSources.fromKey(styleKey)
         if (mapView.tileProvider.tileSource.name() != newTileSource.name()) {
             mapView.setTileSource(newTileSource)
+            com.charly.wallpapermap.map.decode.TileDecodeScheduler.currentTileSourceName = newTileSource.name()
             updateBrightnessOverlay(styleKey)
         }
     }
