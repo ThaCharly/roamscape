@@ -16,6 +16,7 @@ import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
 import kotlin.math.abs
+import com.charly.wallpapermap.map.DirectionalTilePrefetcher
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -157,6 +158,9 @@ class MapWallpaperService : WallpaperService() {
                 renderer.centerOn(predictionResult[0], predictionResult[1])
                 drawFrame()
             }
+
+            DirectionalTilePrefetcher.onLocationUpdate(location, renderer.mapView)
+
 
         }
 
