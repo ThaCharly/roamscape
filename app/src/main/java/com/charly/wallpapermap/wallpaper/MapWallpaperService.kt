@@ -16,7 +16,6 @@ import com.charly.wallpapermap.map.MapRenderer
 import com.charly.wallpapermap.settings.SettingsManager
 import android.util.Log
 import kotlin.math.abs
-import com.charly.wallpapermap.map.TilePrefetcher
 
 class MapWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = MapEngine()
@@ -159,7 +158,6 @@ class MapWallpaperService : WallpaperService() {
                 drawFrame()
             }
 
-            TilePrefetcher.onLocationUpdate(applicationContext, location, renderer.mapView)
         }
 
         private fun performRenderStep() {
