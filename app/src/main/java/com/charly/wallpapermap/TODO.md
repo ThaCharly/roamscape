@@ -101,6 +101,7 @@ Para el usuario entusiasta, podés dejar que dibuje círculos en el mapa.
     "Casa": Radio 50m -> App Off.
 
 
+
 Tecnicas para Geofencing
 
 1. La Máquina de Estados: "Active" vs "Sleeping"
