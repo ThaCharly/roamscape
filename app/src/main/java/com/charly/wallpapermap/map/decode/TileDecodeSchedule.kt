@@ -1,20 +1,30 @@
 package com.charly.wallpapermap.map.decode
 
+import android.util.Log
+
 object TileDecodeScheduler {
 
     const val PRIORITY_VISIBLE = 0
     const val PRIORITY_BORDER = 1
     const val PRIORITY_PREFETCH = 2
 
-    // Guardamos el nombre del source actual para pasárselo a los jobs
-    var currentTileSourceName: String = "Mapnik"
-
-    fun schedule(tileIndex: Long, priority: Int) {
-        // Si ya está en caché, ni nos gastamos
-        if (TileBitmapCache.get(tileIndex) != null) return
+    fun schedule(
+        tileIndex: Long,
+        priority: Int,
+        tileSourceName: String
+    ) {
+        if (TileBitmapCache.get(tileIndex) != null) {
+            Log.v("TileDecode", "💾 SKIP CACHE | Tile: $tileIndex")
+            return
+        }
 
         TileDecodeQueue.push(
-            TileDecodeJob(tileIndex, priority, currentTileSourceName)
+            TileDecodeJob(tileIndex, priority, tileSourceName)
+        )
+
+        Log.d(
+            "TileDecode",
+            "📦 SCHEDULE | Tile: $tileIndex | Priority: $priority"
         )
     }
-}
+    }

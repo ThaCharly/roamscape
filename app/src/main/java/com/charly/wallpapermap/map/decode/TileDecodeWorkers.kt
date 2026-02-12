@@ -1,6 +1,7 @@
 package com.charly.wallpapermap.map.decode
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.util.Log
@@ -8,10 +9,18 @@ import kotlinx.coroutines.*
 import org.osmdroid.views.MapView
 import java.util.concurrent.Executors
 import java.lang.ref.WeakReference
+import kotlin.math.max
+import kotlin.math.min
 
 object TileDecodeWorkers {
 
-    private const val WORKER_COUNT = 2 // 2 hilos dedicados solo a descomprimir PNGs
+    // 🧠 MEJORA 1: Workers dinámicos según potencia del CPU
+    // Mínimo 2 hilos, Máximo 4 (para no saturar en teléfonos gama alta)
+    private val WORKER_COUNT = run {
+        val cores = Runtime.getRuntime().availableProcessors()
+        // Usamos la mitad de los cores disponibles, clavado entre 2 y 4.
+        (cores / 2).coerceIn(2, 4)
+    }
 
     private val dispatcher = Executors
         .newFixedThreadPool(WORKER_COUNT) { r -> Thread(r, "TileDecodeWorker") }
@@ -19,14 +28,25 @@ object TileDecodeWorkers {
 
     private val scope = CoroutineScope(dispatcher + SupervisorJob())
 
-    // Referencia débil al mapa para inyectarle los tiles
     private var mapViewRef: WeakReference<MapView>? = null
+
+    // 🧠 MEJORA 3: Protección de ciclo de vida
+    @Volatile
+    private var isStarted = false
 
     fun setMapView(mapView: MapView) {
         mapViewRef = WeakReference(mapView)
     }
 
     fun start(context: Context) {
+        if (isStarted) return
+        isStarted = true
+
+        Log.d(
+            "TileDecode",
+            "🚀 Workers iniciados | Cantidad: $WORKER_COUNT | CPU: ${Runtime.getRuntime().availableProcessors()}"
+        )
+
         repeat(WORKER_COUNT) {
             scope.launch {
                 workerLoop(context)
@@ -34,62 +54,85 @@ object TileDecodeWorkers {
         }
     }
 
-    // CORRECCIÓN: Agregamos 'CoroutineScope.' antes del nombre
+
     private suspend fun CoroutineScope.workerLoop(ctx: Context) {
-        while (isActive) { // Ahora sí funciona isActive
-            // Esto bloquea hasta que haya trabajo (es eficiente)
+        while (isActive) {
+
             val job = TileDecodeQueue.take()
 
-            // 1. Chequeo rápido: ¿Ya lo tenemos en NUESTRA caché?
-            if (TileBitmapCache.get(job.tileIndex) != null) {
-                continue
-            }
+            if (TileBitmapCache.get(job.tileIndex) != null) continue
 
-            // 2. Chequeo de Osmdroid: ¿Ya lo tiene el mapa? (Evitamos decode al pedo)
             val mapView = mapViewRef?.get()
+
             if (mapView != null) {
-                // Accedemos a la cache de memoria de osmdroid (protegida pero accesible)
-                // Si devuelve algo, es que ya está listo para dibujar.
-                // Usamos try/catch por si osmdroid cambia API interna, aunque es estable.
                 try {
                     if (mapView.tileProvider.tileCache.getMapTile(job.tileIndex) != null) {
+                        Log.v("TileDecode", "🟡 SKIP PROVIDER CACHE | Tile: ${job.tileIndex}")
                         continue
                     }
-                } catch (e: Exception) {
-                    // Ignorar
-                }
+                } catch (_: Exception) {}
             }
 
             decodeTile(ctx, job)
         }
     }
 
-    private fun decodeTile(ctx: Context, job: TileDecodeJob) {
-        try {
-            val file = TileFileResolver.resolve(ctx, job.tileIndex, job.tileSourceName)
-                ?: return // No está descargado todavía
 
-            // DECODE: La operación pesada (CPU)
-            val bmp = BitmapFactory.decodeFile(file.absolutePath)
+    private fun decodeTile(ctx: Context, job: TileDecodeJob) {
+
+        val threadName = Thread.currentThread().name
+        val start = System.currentTimeMillis()
+
+        try {
+
+            val file = TileFileResolver.resolve(ctx, job.tileIndex, job.tileSourceName)
                 ?: return
 
-            // 1. Guardar en nuestra caché LRU
+            val opts = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.RGB_565
+                inDither = true
+            }
+
+            val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                ?: return
+
             TileBitmapCache.put(job.tileIndex, bmp)
 
-            // 2. INYECCIÓN DIRECTA (El truco maestro)
             mapViewRef?.get()?.let { map ->
-                val drawable = BitmapDrawable(ctx.resources, bmp)
-                // Inyectamos a la caché de Osmdroid
-                map.tileProvider.tileCache.putTile(job.tileIndex, drawable)
 
-                // Opcional: Forzar repintado si es muy urgente (PRIORITY_VISIBLE)
-                if (job.priority == TileDecodeScheduler.PRIORITY_VISIBLE) {
-                    map.postInvalidate()
+                val drawable = BitmapDrawable(ctx.resources, bmp)
+
+                map.post {
+
+                    try {
+                        map.tileProvider.tileCache.putTile(job.tileIndex, drawable)
+
+                        if (job.priority == TileDecodeScheduler.PRIORITY_VISIBLE) {
+                            map.invalidate()
+                        }
+
+                    } catch (_: Exception) {}
                 }
             }
 
+            val duration = System.currentTimeMillis() - start
+
+            Log.d(
+                "TileDecode",
+                "🧩 DECODE OK | Tile: ${job.tileIndex} | " +
+                        "Priority: ${job.priority} | " +
+                        "Tiempo: ${duration}ms | " +
+                        "Hilo: $threadName"
+            )
+
         } catch (e: Exception) {
-            Log.e("TileDecode", "Error decodificando tile: ${e.message}")
+
+            Log.e(
+                "TileDecode",
+                "💥 DECODE ERROR | Tile: ${job.tileIndex} | ${e.message}"
+            )
         }
     }
+
+
 }

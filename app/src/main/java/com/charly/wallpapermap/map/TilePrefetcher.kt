@@ -9,6 +9,7 @@ import org.osmdroid.views.MapView
 import java.util.concurrent.Executors
 import kotlin.math.*
 import com.charly.wallpapermap.map.decode.TileDecodeScheduler
+import com.charly.wallpapermap.map.decode.TileDecodeScheduler.PRIORITY_PREFETCH
 
 object DirectionalTilePrefetcher {
 
@@ -137,7 +138,11 @@ object DirectionalTilePrefetcher {
 
                 finalList.forEach { tileIndex ->
                     provider.getMapTile(tileIndex)
-                    TileDecodeScheduler.schedule(tileIndex, TileDecodeScheduler.PRIORITY_PREFETCH)
+                    TileDecodeScheduler.schedule(
+                        tileIndex,
+                        PRIORITY_PREFETCH,
+                        mapView.tileProvider.tileSource.name()
+                    )
                     requestedTiles[tileIndex] = System.currentTimeMillis()
                 }
             }

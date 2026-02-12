@@ -46,14 +46,18 @@ class MapRenderer(
         mapView.mapOrientation = -bearingDegrees
     }
 
+    private fun currentSourceName(): String =
+        mapView.tileProvider.tileSource.name()
+
+
     fun applyStyle(styleKey: String?) {
         val newTileSource = TileSources.fromKey(styleKey)
         if (mapView.tileProvider.tileSource.name() != newTileSource.name()) {
             mapView.setTileSource(newTileSource)
-            com.charly.wallpapermap.map.decode.TileDecodeScheduler.currentTileSourceName = newTileSource.name()
             updateBrightnessOverlay(styleKey)
         }
     }
+
 
     fun centerOn(lat: Double, lon: Double) {
         val newPoint = GeoPoint(lat, lon)

@@ -1,28 +1,58 @@
 package com.charly.wallpapermap.map.decode
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.PriorityBlockingQueue
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.PriorityQueue
+import java.util.HashSet
+import kotlinx.coroutines.launch
 
 object TileDecodeQueue {
 
-    private val queue = PriorityBlockingQueue<TileDecodeJob>(
-        100,
+    private const val MAX_QUEUE_SIZE = 300
+
+    private val mutex = Mutex()
+
+    private val queue = PriorityQueue<TileDecodeJob>(
         compareBy<TileDecodeJob> { it.priority }
-            .thenBy { it.timestamp }
     )
 
-    private val scheduled = ConcurrentHashMap.newKeySet<Long>()
+    // Evita duplicados
+    private val enqueued = HashSet<Long>()
 
-    fun push(job: TileDecodeJob) {
-        // Evitamos duplicar laburo si ya está en cola
-        if (scheduled.add(job.tileIndex)) {
-            queue.put(job)
+    suspend fun take(): TileDecodeJob {
+        while (true) {
+            mutex.withLock {
+                val job = queue.poll()
+                if (job != null) {
+                    enqueued.remove(job.tileIndex)
+                    return job
+                }
+            }
+            kotlinx.coroutines.delay(5)
         }
     }
 
-    fun take(): TileDecodeJob {
-        val job = queue.take()
-        scheduled.remove(job.tileIndex)
-        return job
+    fun push(job: TileDecodeJob) {
+        kotlinx.coroutines.GlobalScope.launch {
+            mutex.withLock {
+
+                // Evitar duplicados
+                if (enqueued.contains(job.tileIndex)) return@withLock
+
+                // Backpressure policy
+                if (queue.size >= MAX_QUEUE_SIZE &&
+                    job.priority == TileDecodeScheduler.PRIORITY_PREFETCH
+                ) {
+                    return@withLock
+                }
+
+                queue.add(job)
+                enqueued.add(job.tileIndex)
+            }
+        }
+    }
+
+    fun contains(tileIndex: Long): Boolean {
+        return enqueued.contains(tileIndex)
     }
 }
